@@ -3,6 +3,7 @@ export * from './schemas/env';
 export * from './schemas/invitation';
 export * from './schemas/auth';
 export * from './schemas/project';
+export * from './schemas/task';
 export * from './schemas/audit';
 export * from './schemas/file';
 export * from './types/index';
