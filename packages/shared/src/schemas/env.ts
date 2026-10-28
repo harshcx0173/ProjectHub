@@ -9,7 +9,7 @@ export const envSchema = z.object({
   // Branding
   NEXT_PUBLIC_APP_NAME: z.string().default('Project Hub'),
   NEXT_PUBLIC_COMPANY_NAME: z.string().default('Hydrated Studio'),
-  NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
+  NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:4321'),
 
   // First Admin Bootstrap Email
   ADMIN_BOOTSTRAP_EMAIL: z.string().email().default('wp34.department@gmail.com'),

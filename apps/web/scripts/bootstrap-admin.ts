@@ -11,7 +11,7 @@ async function bootstrapFirstAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const adminEmail = process.env.ADMIN_BOOTSTRAP_EMAIL || 'wp34.department@gmail.com';
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:4321';
 
   if (!supabaseUrl || !serviceKey) {
     console.error('❌ Error: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in .env.local');

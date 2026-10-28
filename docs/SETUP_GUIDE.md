@@ -26,7 +26,7 @@ SUPABASE_SERVICE_ROLE_KEY="<your-service-role-secret-key>"
 # Application Identity & Branding
 NEXT_PUBLIC_APP_NAME="Project Hub"
 NEXT_PUBLIC_COMPANY_NAME="Hydrated Studio"
-NEXT_PUBLIC_APP_URL="http://localhost:3000"
+NEXT_PUBLIC_APP_URL="http://localhost:4321"
 
 # First Administrator Bootstrap Email
 ADMIN_BOOTSTRAP_EMAIL="admin@yourcompany.com"
@@ -61,7 +61,7 @@ pnpm --filter @project-hub/web bootstrap-admin
 
 This will print a secure, single-use invitation link:
 ```
-http://localhost:3000/invite/accept?token=<secure-hex-token>
+http://localhost:4321/invite/accept?token=<secure-hex-token>
 ```
 Open the link in your browser, set your full name and password, scan the QR code to activate mandatory TOTP two-factor authentication, and save your recovery codes.
 
@@ -73,7 +73,7 @@ Open the link in your browser, set your full name and password, scan the QR code
 ```bash
 pnpm dev
 ```
-Open `http://localhost:3000`.
+Open `http://localhost:4321`.
 
 ### Production Build & Launch:
 ```bash

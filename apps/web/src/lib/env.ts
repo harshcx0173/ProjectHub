@@ -23,7 +23,7 @@ try {
       SUPABASE_SERVICE_ROLE_KEY: '',
       NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME || 'Project Hub',
       NEXT_PUBLIC_COMPANY_NAME: process.env.NEXT_PUBLIC_COMPANY_NAME || 'Hydrated Studio',
-      NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+      NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:4321',
       ADMIN_BOOTSTRAP_EMAIL: process.env.ADMIN_BOOTSTRAP_EMAIL || 'wp34.department@gmail.com',
       STORAGE_PROVIDER: 'supabase',
       STORAGE_BUCKET_NAME: 'project-files',
