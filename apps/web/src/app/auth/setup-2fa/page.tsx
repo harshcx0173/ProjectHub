@@ -24,11 +24,12 @@ export default function SetupTotpPage() {
       setIsLoading(true);
       try {
         const res = await fetch('/api/v1/auth/totp/setup', { method: 'POST' });
-        const data = await res.json();
         if (!res.ok) {
-          setErrorMessage(data.message || 'Failed to initialize 2FA setup.');
+          const errData = await res.json().catch(() => ({ message: `HTTP ${res.status}: Failed to initialize 2FA setup.` }));
+          setErrorMessage(errData.message || 'Failed to initialize 2FA setup.');
           return;
         }
+        const data = await res.json();
         setQrCodeUrl(data.qrCodeDataUrl);
         setSecretKey(data.secret);
       } catch (err: any) {
@@ -71,14 +72,14 @@ export default function SetupTotpPage() {
         body: JSON.stringify({ code: code.trim() }),
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
-        setErrorMessage(data.message || 'Failed to verify 2FA code.');
+        const errData = await res.json().catch(() => ({ message: 'Verification failed.' }));
+        setErrorMessage(errData.message || 'Failed to verify 2FA code.');
         setIsVerifying(false);
         return;
       }
 
+      const data = await res.json();
       setRecoveryCodes(data.recoveryCodes);
       setIsVerifying(false);
     } catch (err: any) {

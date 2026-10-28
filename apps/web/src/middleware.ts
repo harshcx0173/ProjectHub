@@ -54,6 +54,12 @@ export async function middleware(request: NextRequest) {
     pathname.includes('favicon.ico');
 
   if (!user && !isPublicPath) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { error: 'UNAUTHORIZED', message: 'Authentication required' },
+        { status: 401 }
+      );
+    }
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirectTo', pathname);
     return NextResponse.redirect(loginUrl);
@@ -70,13 +76,29 @@ export async function middleware(request: NextRequest) {
     if (profile) {
       if (profile.status === 'disabled') {
         await supabase.auth.signOut();
+        if (pathname.startsWith('/api/')) {
+          return NextResponse.json(
+            { error: 'ACCOUNT_DEACTIVATED', message: 'Your account has been deactivated.' },
+            { status: 403 }
+          );
+        }
         const disabledUrl = new URL('/login', request.url);
         disabledUrl.searchParams.set('error', 'deactivated');
         return NextResponse.redirect(disabledUrl);
       }
 
-      // Mandatory 2FA for Admin
-      if (profile.org_role === 'Admin' && !profile.is_totp_enabled && !pathname.startsWith('/auth/setup-2fa')) {
+      // Mandatory 2FA for Admin (exempt TOTP setup APIs)
+      const isTotpAllowed =
+        pathname.startsWith('/auth/setup-2fa') ||
+        pathname.startsWith('/api/v1/auth/totp');
+
+      if (profile.org_role === 'Admin' && !profile.is_totp_enabled && !isTotpAllowed) {
+        if (pathname.startsWith('/api/')) {
+          return NextResponse.json(
+            { error: '2FA_REQUIRED', message: 'Two-factor authentication setup is mandatory for Administrators.' },
+            { status: 403 }
+          );
+        }
         return NextResponse.redirect(new URL('/auth/setup-2fa', request.url));
       }
 
