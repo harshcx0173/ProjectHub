@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.turbo/
+
+# Next.js
+.next/
+out/
+build/
+dist/
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Supabase
+.supabase/local
+supabase/.temp/
+
+# Logs & Debugging
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+
+# Testing & Coverage
+coverage/
+test-results/
+playwright-report/
+blob-report/
