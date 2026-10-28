@@ -165,12 +165,26 @@ create index if not exists idx_audit_logs_created_at on public.audit_logs(create
 create index if not exists idx_audit_logs_action on public.audit_logs(action);
 
 -- ------------------------------------------------------------------------------
--- 7. Helper Security & Permission Functions
+-- 7. Helper Security & Permission Functions (Security Definer with search_path to prevent RLS recursion)
 -- ------------------------------------------------------------------------------
+create or replace function public.is_active_member(p_user_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+    select exists (
+        select 1 from public.profiles
+        where id = p_user_id and status = 'active'
+    );
+$$;
+
 create or replace function public.is_admin(p_user_id uuid)
 returns boolean
 language sql
 security definer
+set search_path = public
 stable
 as $$
     select exists (
@@ -183,6 +197,7 @@ create or replace function public.has_permission(p_user_id uuid, p_permission_ke
 returns boolean
 language sql
 security definer
+set search_path = public
 stable
 as $$
     select exists (
@@ -197,6 +212,32 @@ as $$
     );
 $$;
 
+-- Trigger to prevent self-role elevation during profile update
+create or replace function public.check_profile_update_security()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+    if auth.uid() = OLD.id and not public.is_admin(auth.uid()) then
+        if NEW.org_role != OLD.org_role then
+            raise exception 'Permission denied: Cannot change your own organization role.';
+        end if;
+        if NEW.status != OLD.status then
+            raise exception 'Permission denied: Cannot change your own account status.';
+        end if;
+    end if;
+    return NEW;
+end;
+$$;
+
+drop trigger if exists tr_profile_update_security on public.profiles;
+create trigger tr_profile_update_security
+before update on public.profiles
+for each row
+execute function public.check_profile_update_security();
+
 -- ------------------------------------------------------------------------------
 -- 8. Row Level Security (RLS) Policies — Default Deny
 -- ------------------------------------------------------------------------------
@@ -208,23 +249,22 @@ alter table public.org_settings enable row level security;
 alter table public.invitations enable row level security;
 alter table public.audit_logs enable row level security;
 
--- Profiles Policies
-create policy "Active users can view other profiles"
+-- Profiles Policies (Recursion-Free)
+drop policy if exists "Active users can view other profiles" on public.profiles;
+drop policy if exists "Users can view profiles" on public.profiles;
+create policy "Users can view profiles"
 on public.profiles for select
 using (
-    exists (select 1 from public.profiles where id = auth.uid() and status = 'active')
+    auth.uid() = id or public.is_active_member(auth.uid())
 );
 
+drop policy if exists "Users can update their own profile" on public.profiles;
 create policy "Users can update their own profile"
 on public.profiles for update
-using (auth.uid() = id and status = 'active')
-with check (
-    auth.uid() = id
-    -- User cannot change their own org_role or status directly
-    and org_role = (select org_role from public.profiles where id = auth.uid())
-    and status = (select status from public.profiles where id = auth.uid())
-);
+using (auth.uid() = id and public.is_active_member(auth.uid()))
+with check (auth.uid() = id);
 
+drop policy if exists "Admins can update any profile" on public.profiles;
 create policy "Admins can update any profile"
 on public.profiles for update
 using (public.is_admin(auth.uid()))
