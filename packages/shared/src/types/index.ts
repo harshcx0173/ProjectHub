@@ -47,9 +47,56 @@ export interface Permission {
 export interface OrgSettings {
   id: string;
   companyName: string;
+  appName: string;
   logoUrl: string | null;
   timezone: string;
   workingDays: number[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProjectGroup {
+  id: string;
+  name: string;
+  position: number;
+  createdAt: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  key: string;
+  description: string | null;
+  iconType: 'lucide' | 'upload';
+  iconValue: string;
+  color: string;
+  groupId: string | null;
+  isArchived: boolean;
+  createdBy: string | null;
+  isPinned?: boolean;
+  unreadCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectMember {
+  id: string;
+  projectId: string;
+  userId: string;
+  projectRole: SystemRoleName | string;
+  fullName: string;
+  avatarUrl: string | null;
+  designation: string | null;
+  addedBy: string | null;
+  createdAt: string;
+}
+
+export interface SearchResult {
+  resultType: 'project' | 'task' | 'message' | 'file' | 'person';
+  id: string;
+  title: string;
+  subtitle: string;
+  projectId: string | null;
+  projectName: string | null;
+  url: string;
 }
