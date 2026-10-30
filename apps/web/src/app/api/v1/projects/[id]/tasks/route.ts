@@ -105,9 +105,25 @@ export async function GET(
       };
     });
 
+    const [canAssign, canSelfAssign, canCreate, canEdit, canDelete] = await Promise.all([
+      checkUserPermission(user.id, 'task.assign'),
+      checkUserPermission(user.id, 'task.self_assign'),
+      checkUserPermission(user.id, 'task.create'),
+      checkUserPermission(user.id, 'task.edit'),
+      checkUserPermission(user.id, 'task.delete'),
+    ]);
+
     return NextResponse.json({
       statuses: statuses || [],
       tasks: formattedTasks,
+      currentUserId: user.id,
+      userPermissions: {
+        canAssign,
+        canSelfAssign,
+        canCreate,
+        canEdit,
+        canDelete,
+      },
     });
   } catch (err: any) {
     return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR', message: err.message }, { status: 500 });
@@ -142,6 +158,38 @@ export async function POST(
       ...body,
       projectId,
     });
+
+    // Validate assignee permissions
+    if (validated.assigneeIds && validated.assigneeIds.length > 0) {
+      const canAssign = await checkUserPermission(user.id, 'task.assign');
+      const canSelfAssign = await checkUserPermission(user.id, 'task.self_assign');
+
+      if (!canAssign && !canSelfAssign) {
+        return NextResponse.json(
+          { error: 'FORBIDDEN', message: 'Missing task.assign or task.self_assign permission.' },
+          { status: 403 }
+        );
+      }
+
+      if (!canAssign && canSelfAssign) {
+        if (validated.assigneeIds.some((id) => id !== user.id)) {
+          return NextResponse.json(
+            { error: 'FORBIDDEN', message: 'You only have self-assignment permissions and cannot assign other users.' },
+            { status: 403 }
+          );
+        }
+      }
+
+      for (const assigneeId of validated.assigneeIds) {
+        const isAssignable = await checkUserPermission(assigneeId, 'task.assignable');
+        if (!isAssignable) {
+          return NextResponse.json(
+            { error: 'USER_NOT_ASSIGNABLE', message: 'One or more selected assignees do not hold the task.assignable permission.' },
+            { status: 400 }
+          );
+        }
+      }
+    }
 
     // Get max position in target column
     const { data: posData } = await supabase

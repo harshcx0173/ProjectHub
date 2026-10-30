@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, use } from 'react';
-import { Kanban, List, Plus, Layers, AlertCircle, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useMemo, use } from 'react';
+import { Kanban, List, Plus, Layers, AlertCircle, RefreshCw, UserCheck } from 'lucide-react';
 import { KanbanBoard } from '@/components/tasks/KanbanBoard';
 import { TaskListView } from '@/components/tasks/TaskListView';
 import { TaskDrawer } from '@/components/tasks/TaskDrawer';
@@ -20,6 +20,15 @@ export default function ProjectBoardPage({
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
   const [statuses, setStatuses] = useState<TaskStatus[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | undefined>();
+  const [userPermissions, setUserPermissions] = useState<{
+    canAssign?: boolean;
+    canSelfAssign?: boolean;
+    canCreate?: boolean;
+    canEdit?: boolean;
+    canDelete?: boolean;
+  }>({ canAssign: true, canSelfAssign: true, canCreate: true, canEdit: true, canDelete: true });
+  const [assignedToMeOnly, setAssignedToMeOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,7 +37,7 @@ export default function ProjectBoardPage({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [defaultCreateStatusId, setDefaultCreateStatusId] = useState<string | undefined>();
 
-  // Fetch tasks and statuses
+  // Fetch tasks, statuses and user permissions
   const fetchTasksAndStatuses = async () => {
     try {
       const res = await fetch(`/api/v1/projects/${projectId}/tasks`);
@@ -39,6 +48,8 @@ export default function ProjectBoardPage({
       const data = await res.json();
       setStatuses(data.statuses || []);
       setTasks(data.tasks || []);
+      if (data.currentUserId) setCurrentUserId(data.currentUserId);
+      if (data.userPermissions) setUserPermissions(data.userPermissions);
       setError(null);
     } catch (err: any) {
       setError(err.message);
@@ -56,37 +67,73 @@ export default function ProjectBoardPage({
     setIsCreateModalOpen(true);
   };
 
+  // Filter tasks if "Assigned to me" is toggled
+  const displayedTasks = useMemo(() => {
+    if (!assignedToMeOnly || !currentUserId) return tasks;
+    return tasks.filter((t) =>
+      (t.assignees || []).some((a) => a.id === currentUserId)
+    );
+  }, [tasks, assignedToMeOnly, currentUserId]);
+
+  const handleTasksChange = (updatedDisplayedTasks: TaskItem[]) => {
+    if (!assignedToMeOnly) {
+      setTasks(updatedDisplayedTasks);
+    } else {
+      // Merge updated displayed tasks back into full tasks array
+      const updatedMap = new Map(updatedDisplayedTasks.map((t) => [t.id, t]));
+      setTasks((prev) => prev.map((t) => updatedMap.get(t.id) || t));
+    }
+  };
+
   return (
     <div className="flex-1 flex overflow-hidden p-4 gap-4 bg-background">
       {/* Center Zone: Kanban Board or List View Container */}
       <div className="flex-1 flex flex-col rounded-xl border border-border bg-white shadow-subtle overflow-hidden min-w-0">
         {/* Toolbar Header */}
         <div className="p-3 border-b border-border flex items-center justify-between gap-3 bg-white shrink-0">
-          {/* View Mode Toggle: Board vs List */}
-          <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+          <div className="flex items-center gap-2">
+            {/* View Mode Toggle: Board vs List */}
+            <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+              <button
+                type="button"
+                onClick={() => setViewMode('board')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                  viewMode === 'board'
+                    ? 'bg-white text-gray-900 shadow-2xs'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                <Kanban className="h-3.5 w-3.5" />
+                Board
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                  viewMode === 'list'
+                    ? 'bg-white text-gray-900 shadow-2xs'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                <List className="h-3.5 w-3.5" />
+                List
+              </button>
+            </div>
+
+            {/* "Assigned to me" Filter Toggle */}
             <button
               type="button"
-              onClick={() => setViewMode('board')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
-                viewMode === 'board'
-                  ? 'bg-white text-gray-900 shadow-2xs'
-                  : 'text-gray-500 hover:text-gray-900'
+              onClick={() => setAssignedToMeOnly(!assignedToMeOnly)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border transition-colors ${
+                assignedToMeOnly
+                  ? 'bg-primary/10 border-primary text-primary shadow-2xs'
+                  : 'border-border text-gray-600 hover:bg-gray-100'
               }`}
+              title="Filter tasks assigned to me"
+              aria-pressed={assignedToMeOnly}
             >
-              <Kanban className="h-3.5 w-3.5" />
-              Board
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
-                viewMode === 'list'
-                  ? 'bg-white text-gray-900 shadow-2xs'
-                  : 'text-gray-500 hover:text-gray-900'
-              }`}
-            >
-              <List className="h-3.5 w-3.5" />
-              List
+              <UserCheck className="h-3.5 w-3.5" />
+              <span>Assigned to me</span>
             </button>
           </div>
 
@@ -101,14 +148,16 @@ export default function ProjectBoardPage({
               <RefreshCw className="h-3.5 w-3.5" />
             </button>
 
-            <button
-              type="button"
-              onClick={() => handleOpenCreateTask()}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              New Task
-            </button>
+            {userPermissions.canCreate && (
+              <button
+                type="button"
+                onClick={() => handleOpenCreateTask()}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                New Task
+              </button>
+            )}
           </div>
         </div>
 
@@ -146,14 +195,14 @@ export default function ProjectBoardPage({
         ) : viewMode === 'board' ? (
           <KanbanBoard
             statuses={statuses}
-            tasks={tasks}
+            tasks={displayedTasks}
             onTaskClick={(t) => setSelectedTaskId(t.id)}
             onAddTaskClick={(sId) => handleOpenCreateTask(sId)}
-            onTasksChange={(newTasks) => setTasks(newTasks)}
+            onTasksChange={handleTasksChange}
           />
         ) : (
           <TaskListView
-            tasks={tasks}
+            tasks={displayedTasks}
             statuses={statuses}
             onTaskClick={(t) => setSelectedTaskId(t.id)}
           />
@@ -169,6 +218,8 @@ export default function ProjectBoardPage({
         onClose={() => setSelectedTaskId(null)}
         onTaskUpdated={fetchTasksAndStatuses}
         statuses={statuses}
+        currentUserId={currentUserId}
+        userPermissions={userPermissions}
       />
 
       {/* Create Task Modal */}
@@ -176,6 +227,8 @@ export default function ProjectBoardPage({
         projectId={projectId}
         defaultStatusId={defaultCreateStatusId}
         statuses={statuses}
+        currentUserId={currentUserId}
+        userPermissions={userPermissions}
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onTaskCreated={fetchTasksAndStatuses}

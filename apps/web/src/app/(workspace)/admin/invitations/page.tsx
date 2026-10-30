@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 
 export default function AdminInvitationsPage() {
   const [invitations, setInvitations] = useState<any[]>([]);
+  const [roles, setRoles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState('');
   const [orgRole, setOrgRole] = useState('Member');
@@ -14,12 +15,21 @@ export default function AdminInvitationsPage() {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchInvitations = async () => {
+  const fetchInvitationsAndRoles = async () => {
     try {
-      const res = await fetch('/api/v1/invitations');
-      if (!res.ok) throw new Error('Failed to load invitations');
-      const data = await res.json();
-      setInvitations(data.invitations || []);
+      const [invRes, rolesRes] = await Promise.all([
+        fetch('/api/v1/invitations'),
+        fetch('/api/v1/admin/roles'),
+      ]);
+
+      if (!invRes.ok) throw new Error('Failed to load invitations');
+      const invData = await invRes.json();
+      setInvitations(invData.invitations || []);
+
+      if (rolesRes.ok) {
+        const rolesData = await rolesRes.json();
+        setRoles(rolesData.roles || []);
+      }
       setError(null);
     } catch (err: any) {
       setError(err.message);
@@ -29,7 +39,7 @@ export default function AdminInvitationsPage() {
   };
 
   useEffect(() => {
-    fetchInvitations();
+    fetchInvitationsAndRoles();
   }, []);
 
   const handleCreateInvite = async (e: React.FormEvent) => {
@@ -54,7 +64,7 @@ export default function AdminInvitationsPage() {
       const data = await res.json();
       setGeneratedLink(data.inviteLink);
       setEmail('');
-      await fetchInvitations();
+      await fetchInvitationsAndRoles();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -75,7 +85,7 @@ export default function AdminInvitationsPage() {
 
       setGeneratedLink(data.inviteLink);
       setCopied(false);
-      await fetchInvitations();
+      await fetchInvitationsAndRoles();
     } catch (err: any) {
       setError(err.message);
     }
@@ -94,7 +104,7 @@ export default function AdminInvitationsPage() {
     try {
       const res = await fetch(`/api/v1/invitations?id=${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to revoke invitation');
-      await fetchInvitations();
+      await fetchInvitationsAndRoles();
     } catch (err: any) {
       alert(err.message);
     }
@@ -163,9 +173,19 @@ export default function AdminInvitationsPage() {
             onChange={(e) => setOrgRole(e.target.value)}
             className="text-xs font-medium py-2 px-3 rounded-lg border border-border bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary"
           >
-            <option value="Member">Member</option>
-            <option value="Manager">Manager</option>
-            <option value="Admin">Admin</option>
+            {roles.length > 0 ? (
+              roles.map((r) => (
+                <option key={r.id} value={r.name}>
+                  {r.name}
+                </option>
+              ))
+            ) : (
+              <>
+                <option value="Member">Member</option>
+                <option value="Manager">Manager</option>
+                <option value="Admin">Admin</option>
+              </>
+            )}
           </select>
 
           <button

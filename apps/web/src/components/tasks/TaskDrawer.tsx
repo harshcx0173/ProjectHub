@@ -13,6 +13,7 @@ import {
   Send,
   Eye,
   Tag,
+  Users,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { TaskStatus } from './KanbanColumn';
@@ -22,6 +23,13 @@ interface TaskDrawerProps {
   onClose: () => void;
   onTaskUpdated: () => void;
   statuses: TaskStatus[];
+  currentUserId?: string;
+  userPermissions?: {
+    canAssign?: boolean;
+    canSelfAssign?: boolean;
+    canEdit?: boolean;
+    canDelete?: boolean;
+  };
 }
 
 export function TaskDrawer({
@@ -29,6 +37,8 @@ export function TaskDrawer({
   onClose,
   onTaskUpdated,
   statuses,
+  currentUserId,
+  userPermissions = { canAssign: true, canSelfAssign: true, canEdit: true, canDelete: true },
 }: TaskDrawerProps) {
   const [task, setTask] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -45,6 +55,10 @@ export function TaskDrawer({
   const [availableLabels, setAvailableLabels] = useState<any[]>([]);
   const [showLabelPicker, setShowLabelPicker] = useState(false);
   const [newLabelName, setNewLabelName] = useState('');
+
+  // Assignees state
+  const [projectMembers, setProjectMembers] = useState<any[]>([]);
+  const [showAssigneePicker, setShowAssigneePicker] = useState(false);
 
   // Load task details when taskId changes
   useEffect(() => {
@@ -63,6 +77,16 @@ export function TaskDrawer({
         if (isMounted) {
           if (data.task) {
             setTask(data.task);
+            if (data.task.projectId) {
+              fetch(`/api/v1/projects/${data.task.projectId}/members`)
+                .then((r) => r.json())
+                .then((m) => {
+                  if (isMounted) {
+                    setProjectMembers((m.members || []).filter((mem: any) => mem.isAssignable));
+                  }
+                })
+                .catch(console.error);
+            }
           }
           setLoading(false);
         }
@@ -142,6 +166,21 @@ export function TaskDrawer({
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const currentAssigneeIds = (task?.assignees || []).map((a: any) => a.id);
+
+  const handleAddAssignee = async (userId: string) => {
+    if (!task) return;
+    const newIds = Array.from(new Set([...currentAssigneeIds, userId]));
+    await handleUpdate({ assigneeIds: newIds });
+    setShowAssigneePicker(false);
+  };
+
+  const handleRemoveAssignee = async (userId: string) => {
+    if (!task) return;
+    const newIds = currentAssigneeIds.filter((id: string) => id !== userId);
+    await handleUpdate({ assigneeIds: newIds });
   };
 
   if (!taskId) return null;
@@ -456,6 +495,108 @@ export function TaskDrawer({
                   >
                     Create
                   </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Assignees Section */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                <Users className="h-3 w-3" />
+                <span>Assignees ({(task.assignees || []).length})</span>
+              </label>
+
+              {userPermissions.canAssign ? (
+                <button
+                  type="button"
+                  onClick={() => setShowAssigneePicker(!showAssigneePicker)}
+                  className="text-[11px] text-primary hover:underline font-semibold flex items-center gap-1"
+                >
+                  <Plus className="h-3 w-3" />
+                  Assign Member
+                </button>
+              ) : userPermissions.canSelfAssign && currentUserId ? (
+                currentAssigneeIds.includes(currentUserId) ? (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveAssignee(currentUserId)}
+                    className="text-[11px] text-red-600 hover:underline font-semibold"
+                  >
+                    Unassign Me
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleAddAssignee(currentUserId)}
+                    className="text-[11px] text-primary hover:underline font-semibold flex items-center gap-1"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Assign to Me
+                  </button>
+                )
+              ) : null}
+            </div>
+
+            {/* List of current assignees */}
+            <div className="flex flex-wrap gap-1.5 items-center">
+              {(task.assignees || []).map((a: any) => (
+                <span
+                  key={a.id}
+                  className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-800 border border-gray-200"
+                >
+                  <div className="h-4 w-4 rounded-full bg-primary text-white text-[9px] font-bold flex items-center justify-center uppercase overflow-hidden">
+                    {a.avatar_url ? (
+                      <img src={a.avatar_url} alt={a.full_name} className="h-full w-full object-cover" />
+                    ) : (
+                      a.full_name?.charAt(0) || 'U'
+                    )}
+                  </div>
+                  <span>{a.full_name}</span>
+                  {(userPermissions.canAssign || (userPermissions.canSelfAssign && a.id === currentUserId)) && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAssignee(a.id)}
+                      className="text-gray-400 hover:text-gray-700"
+                      title={`Remove ${a.full_name}`}
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  )}
+                </span>
+              ))}
+
+              {(task.assignees || []).length === 0 && (
+                <span className="text-[11px] text-gray-400 italic">No members assigned</span>
+              )}
+            </div>
+
+            {/* Assignee Picker Dropdown */}
+            {showAssigneePicker && userPermissions.canAssign && (
+              <div className="mt-2 p-2.5 rounded-xl border border-border bg-gray-50/80 space-y-2">
+                <div className="text-[11px] font-medium text-gray-600">
+                  Select Assignable Member:
+                </div>
+                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto">
+                  {projectMembers
+                    .filter((pm) => !currentAssigneeIds.includes(pm.userId))
+                    .map((pm) => (
+                      <button
+                        type="button"
+                        key={pm.userId}
+                        onClick={() => handleAddAssignee(pm.userId)}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-white hover:bg-primary/10 hover:text-primary hover:border-primary border border-border transition-colors"
+                      >
+                        <Plus className="h-3 w-3" />
+                        <span>{pm.fullName}</span>
+                      </button>
+                    ))}
+                  {projectMembers.filter((pm) => !currentAssigneeIds.includes(pm.userId)).length === 0 && (
+                    <span className="text-[11px] text-gray-400 italic">
+                      All assignable members are already assigned to this task.
+                    </span>
+                  )}
                 </div>
               </div>
             )}

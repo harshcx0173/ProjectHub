@@ -202,6 +202,45 @@ export async function PATCH(
 
     // Update assignees if provided
     if (validated.assigneeIds !== undefined) {
+      const canAssign = await checkUserPermission(user.id, 'task.assign');
+      const canSelfAssign = await checkUserPermission(user.id, 'task.self_assign');
+
+      if (!canAssign && !canSelfAssign) {
+        return NextResponse.json(
+          { error: 'FORBIDDEN', message: 'Missing task.assign or task.self_assign permission.' },
+          { status: 403 }
+        );
+      }
+
+      const { data: existingAssignees } = await supabase
+        .from('task_assignees')
+        .select('user_id')
+        .eq('task_id', taskId);
+
+      const existingIds = (existingAssignees || []).map((a: any) => a.user_id);
+
+      if (!canAssign && canSelfAssign) {
+        const addedOther = validated.assigneeIds.some((id) => id !== user.id && !existingIds.includes(id));
+        const removedOther = existingIds.some((id) => id !== user.id && !validated.assigneeIds!.includes(id));
+
+        if (addedOther || removedOther) {
+          return NextResponse.json(
+            { error: 'FORBIDDEN', message: 'You only have self-assignment permissions and cannot assign or unassign other team members.' },
+            { status: 403 }
+          );
+        }
+      }
+
+      for (const aId of validated.assigneeIds) {
+        const isAssignable = await checkUserPermission(aId, 'task.assignable');
+        if (!isAssignable) {
+          return NextResponse.json(
+            { error: 'USER_NOT_ASSIGNABLE', message: 'One or more assignees do not hold the task.assignable permission.' },
+            { status: 400 }
+          );
+        }
+      }
+
       await supabase.from('task_assignees').delete().eq('task_id', taskId);
       if (validated.assigneeIds.length > 0) {
         const rows = validated.assigneeIds.map((uId) => ({

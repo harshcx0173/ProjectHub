@@ -23,6 +23,8 @@ export const PROJECT_PERMISSIONS = [
   'task.create',
   'task.edit',
   'task.assign',
+  'task.self_assign',
+  'task.assignable',
   'task.delete',
   'task.delete_own',
   'chat.read',
@@ -179,8 +181,24 @@ export const PERMISSION_CATALOG: Record<PermissionKey, PermissionDefinition> = {
     key: 'task.assign',
     scope: 'project',
     group: 'task',
-    label: 'Assign Tasks',
+    label: 'Assign Tasks to Others',
     description: 'Assign or reassign tasks to team members',
+    isAssignable: true,
+  },
+  'task.self_assign': {
+    key: 'task.self_assign',
+    scope: 'project',
+    group: 'task',
+    label: 'Self-Assign Tasks',
+    description: 'Assign or unassign oneself to tasks',
+    isAssignable: true,
+  },
+  'task.assignable': {
+    key: 'task.assignable',
+    scope: 'project',
+    group: 'task',
+    label: 'Assignable to Tasks',
+    description: 'Permit this role to be selected as a task assignee',
     isAssignable: true,
   },
   'task.delete': {
@@ -287,6 +305,8 @@ export const SYSTEM_ROLE_MANAGER_PERMISSIONS: PermissionKey[] = [
   'task.create',
   'task.edit',
   'task.assign',
+  'task.self_assign',
+  'task.assignable',
   'task.delete',
   'task.delete_own',
   'chat.read',
@@ -304,7 +324,8 @@ export const SYSTEM_ROLE_MEMBER_PERMISSIONS: PermissionKey[] = [
   'project.view',
   'task.create',
   'task.edit',
-  'task.assign',
+  'task.self_assign',
+  'task.assignable',
   'task.delete_own',
   'chat.read',
   'chat.send',
@@ -321,3 +342,20 @@ export const SYSTEM_ROLES = {
 } as const;
 
 export type SystemRoleName = (typeof SYSTEM_ROLES)[keyof typeof SYSTEM_ROLES];
+
+/**
+ * Factory default permission sets for editable system roles.
+ * Used for "Reset to default" action in Admin Roles Manager.
+ */
+export const DEFAULT_ROLE_PERMISSIONS: Record<'Manager' | 'Member', PermissionKey[]> = {
+  [SYSTEM_ROLES.MANAGER]: [...SYSTEM_ROLE_MANAGER_PERMISSIONS],
+  [SYSTEM_ROLES.MEMBER]: [...SYSTEM_ROLE_MEMBER_PERMISSIONS],
+};
+
+/**
+ * Permissions that can NEVER be assigned to non-Admin roles (Manager, Member, or Custom).
+ * Enforced in server APIs and database constraints.
+ */
+export const LOCKED_ROLE_PERMISSIONS: PermissionKey[] = [
+  'org.roles.manage',
+];

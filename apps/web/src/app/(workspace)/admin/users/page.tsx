@@ -9,6 +9,7 @@ export default function AdminUsersPage() {
   const [roles, setRoles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
   const [error, setError] = useState<string | null>(null);
 
   // Offboarding modal state
@@ -128,6 +129,7 @@ export default function AdminUsersPage() {
   );
 
   const filtered = users.filter((u) => {
+    if (roleFilter !== 'all' && u.org_role !== roleFilter) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -148,15 +150,32 @@ export default function AdminUsersPage() {
           </p>
         </div>
 
-        <div className="relative w-72">
-          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search by name, role or title..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-border bg-white focus:outline-none focus:ring-1 focus:ring-primary"
-          />
+        <div className="flex items-center gap-2">
+          {/* Role Filter */}
+          <select
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value)}
+            className="text-xs font-medium py-1.5 px-2.5 rounded-lg border border-border bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-primary shadow-2xs"
+            aria-label="Filter by role"
+          >
+            <option value="all">All Roles</option>
+            {roles.map((r) => (
+              <option key={r.id} value={r.name}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+
+          <div className="relative w-64">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by name, role or title..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-border bg-white focus:outline-none focus:ring-1 focus:ring-primary shadow-2xs"
+            />
+          </div>
         </div>
       </div>
 

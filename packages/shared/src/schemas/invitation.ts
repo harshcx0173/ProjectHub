@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const createInvitationSchema = z.object({
   email: z.string().email('Please provide a valid email address').trim().toLowerCase(),
-  orgRole: z.enum(['Admin', 'Manager', 'Member']).default('Member'),
+  orgRole: z.string().min(1, 'Role is required').default('Member'),
   presetProjectIds: z.array(z.string().uuid()).default([]),
 });
 

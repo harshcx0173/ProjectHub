@@ -1,13 +1,26 @@
 'use client';
 
-import React, { useState } from 'react';
-import { X, Calendar, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Calendar, AlertCircle, Users } from 'lucide-react';
 import { TaskStatus } from './KanbanColumn';
+
+interface MemberOption {
+  userId: string;
+  fullName: string;
+  avatarUrl: string | null;
+  designation: string | null;
+  isAssignable: boolean;
+}
 
 interface CreateTaskModalProps {
   projectId: string;
   defaultStatusId?: string;
   statuses: TaskStatus[];
+  currentUserId?: string;
+  userPermissions?: {
+    canAssign?: boolean;
+    canSelfAssign?: boolean;
+  };
   isOpen: boolean;
   onClose: () => void;
   onTaskCreated: () => void;
@@ -17,6 +30,8 @@ export function CreateTaskModal({
   projectId,
   defaultStatusId,
   statuses,
+  currentUserId,
+  userPermissions = { canAssign: true, canSelfAssign: true },
   isOpen,
   onClose,
   onTaskCreated,
@@ -26,10 +41,38 @@ export function CreateTaskModal({
   const [statusId, setStatusId] = useState(defaultStatusId || statuses[0]?.id || '');
   const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('medium');
   const [dueDate, setDueDate] = useState('');
+  const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<string[]>([]);
+  const [members, setMembers] = useState<MemberOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (isOpen && projectId) {
+      fetch(`/api/v1/projects/${projectId}/members`)
+        .then((res) => res.json())
+        .then((data) => {
+          setMembers((data.members || []).filter((m: any) => m.isAssignable));
+        })
+        .catch(() => {});
+    }
+  }, [isOpen, projectId]);
+
   if (!isOpen) return null;
+
+  const toggleAssignee = (uId: string) => {
+    setSelectedAssigneeIds((prev) =>
+      prev.includes(uId) ? prev.filter((id) => id !== uId) : [...prev, uId]
+    );
+  };
+
+  const handleSelfAssignToggle = (checked: boolean) => {
+    if (!currentUserId) return;
+    if (checked) {
+      setSelectedAssigneeIds([currentUserId]);
+    } else {
+      setSelectedAssigneeIds([]);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,6 +91,7 @@ export function CreateTaskModal({
           statusId: statusId || statuses[0]?.id,
           priority,
           dueDate: dueDate || undefined,
+          assigneeIds: selectedAssigneeIds,
         }),
       });
 
@@ -62,6 +106,7 @@ export function CreateTaskModal({
       setTitle('');
       setDescription('');
       setDueDate('');
+      setSelectedAssigneeIds([]);
       setLoading(false);
       onTaskCreated();
       onClose();
@@ -92,7 +137,7 @@ export function CreateTaskModal({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
           {error && (
             <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2">
               <AlertCircle className="h-4 w-4 shrink-0" />
@@ -157,6 +202,66 @@ export function CreateTaskModal({
               />
             </div>
           </div>
+
+          {/* Granular Task Assignee Selection */}
+          {userPermissions.canAssign ? (
+            <div>
+              <label className="text-xs font-semibold text-gray-700 block mb-1.5 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5 text-primary" />
+                  Assignees ({selectedAssigneeIds.length} selected)
+                </span>
+                <span className="text-[10px] text-gray-400 font-normal">
+                  Only members holding task.assignable
+                </span>
+              </label>
+
+              <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto p-2 rounded-xl border border-border bg-gray-50/60">
+                {members.map((m) => {
+                  const isChecked = selectedAssigneeIds.includes(m.userId);
+                  return (
+                    <label
+                      key={m.userId}
+                      className={`flex items-center gap-2 p-1.5 rounded-lg border text-xs cursor-pointer transition-colors ${
+                        isChecked
+                          ? 'bg-primary/10 border-primary text-primary font-medium'
+                          : 'bg-white border-border text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleAssignee(m.userId)}
+                        className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5"
+                      />
+                      <span className="truncate">{m.fullName}</span>
+                    </label>
+                  );
+                })}
+
+                {members.length === 0 && (
+                  <div className="col-span-2 py-4 text-center text-xs text-gray-400">
+                    No assignable members found for this project.
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : userPermissions.canSelfAssign && currentUserId ? (
+            <div className="p-3 rounded-xl border border-border bg-gray-50/60">
+              <label className="flex items-center gap-2 text-xs font-semibold text-gray-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selectedAssigneeIds.includes(currentUserId)}
+                  onChange={(e) => handleSelfAssignToggle(e.target.checked)}
+                  className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5"
+                />
+                <span>Assign this task to myself</span>
+              </label>
+              <p className="text-[11px] text-gray-500 mt-1 pl-5.5">
+                Your role permits self-assignment.
+              </p>
+            </div>
+          ) : null}
 
           <div>
             <label className="text-xs font-semibold text-gray-700 block mb-1">Description</label>
