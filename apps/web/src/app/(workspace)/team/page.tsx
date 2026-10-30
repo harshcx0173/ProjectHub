@@ -11,11 +11,11 @@ export default function TeamDirectoryPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/v1/admin/users')
+    fetch('/api/v1/users')
       .then((res) => res.json())
       .then((data) => {
         if (data.users) {
-          setUsers(data.users.filter((u: any) => u.status === 'active'));
+          setUsers(data.users);
         } else {
           setError(data.message || 'Failed to load team directory');
         }

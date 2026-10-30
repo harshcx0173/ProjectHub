@@ -10,6 +10,18 @@ export async function checkUserPermission(
   permissionKey: PermissionKey
 ): Promise<boolean> {
   const supabase = await createClient();
+
+  // Fast path: Organization Admins have full access
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('org_role, status')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profile?.status === 'active' && profile?.org_role?.toLowerCase() === 'admin') {
+    return true;
+  }
+
   const { data, error } = await supabase.rpc('has_permission', {
     p_user_id: userId,
     p_permission_key: permissionKey,

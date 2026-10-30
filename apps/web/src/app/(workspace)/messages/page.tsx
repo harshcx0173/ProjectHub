@@ -139,8 +139,14 @@ export default function MessagesPage() {
     if (!isNewChatOpen) return;
     setLoadingUsers(true);
     setModalError(null);
-    fetch('/api/v1/admin/users')
-      .then((r) => r.json())
+    fetch('/api/v1/users')
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          throw new Error(data.message || 'Failed to load team members');
+        }
+        return data;
+      })
       .then((data) => {
         const users = Array.isArray(data.users)
           ? data.users.map((u: any) => ({
