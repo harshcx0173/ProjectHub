@@ -88,7 +88,7 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
           .from('profiles')
           .select('full_name')
           .eq('id', data.user.id)
-          .single()
+          .maybeSingle()
           .then(({ data: profile }) => {
             if (profile?.full_name) setCurrentUserName(profile.full_name);
           });

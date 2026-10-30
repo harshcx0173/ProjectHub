@@ -20,7 +20,7 @@ export default async function DashboardPage() {
     .from('profiles')
     .select('full_name, org_role')
     .eq('id', user!.id)
-    .single();
+    .maybeSingle();
 
   // Fetch authorized projects
   const { data: rawProjects } = await supabase

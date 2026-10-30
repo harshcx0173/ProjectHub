@@ -22,7 +22,7 @@ export default async function AuthenticatedWorkspaceLayout({
     .from('profiles')
     .select('*')
     .eq('id', user.id)
-    .single();
+    .maybeSingle();
 
   if (!profile || profile.status === 'disabled') {
     redirect('/login?error=deactivated');
@@ -33,7 +33,7 @@ export default async function AuthenticatedWorkspaceLayout({
     .from('org_settings')
     .select('*')
     .limit(1)
-    .single();
+    .maybeSingle();
 
   // Fetch User Projects
   const { data: rawProjects } = await supabase
