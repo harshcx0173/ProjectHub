@@ -103,7 +103,8 @@ drop policy if exists "Members can view conversations" on public.conversations;
 create policy "Members can view conversations"
 on public.conversations for select
 using (
-    public.is_conversation_member(id, auth.uid())
+    created_by = auth.uid()
+    or public.is_conversation_member(id, auth.uid())
 );
 
 drop policy if exists "Authenticated users can create conversations" on public.conversations;
@@ -115,7 +116,8 @@ drop policy if exists "Members can update conversation metadata" on public.conve
 create policy "Members can update conversation metadata"
 on public.conversations for update
 using (
-    public.is_conversation_member(id, auth.uid())
+    created_by = auth.uid()
+    or public.is_conversation_member(id, auth.uid())
 );
 
 -- Conversation Members RLS
@@ -125,6 +127,11 @@ on public.conversation_members for select
 using (
     user_id = auth.uid()
     or public.is_conversation_member(conversation_id, auth.uid())
+    or exists (
+        select 1 from public.conversations c
+        where c.id = conversation_members.conversation_id
+          and c.created_by = auth.uid()
+    )
 );
 
 drop policy if exists "Authenticated users can add members" on public.conversation_members;
