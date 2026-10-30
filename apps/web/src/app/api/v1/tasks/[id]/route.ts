@@ -115,12 +115,32 @@ export async function GET(
         updatedAt: task.updated_at,
         assignees: (task.task_assignees || []).map((a: any) => a.profiles).filter(Boolean),
         checklistItems: (task.task_checklist_items || []).sort((a: any, b: any) => a.position - b.position),
-        comments: (task.task_comments || []).sort(
-          (a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        ),
-        activity: (task.task_activity || []).sort(
-          (a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        ),
+        comments: (task.task_comments || [])
+          .sort(
+            (a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          )
+          .map((c: any) => ({
+            id: c.id,
+            content: c.content,
+            createdAt: c.created_at,
+            created_at: c.created_at,
+            updatedAt: c.updated_at,
+            author: c.profiles,
+            profiles: c.profiles,
+          })),
+        activity: (task.task_activity || [])
+          .sort(
+            (a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )
+          .map((act: any) => ({
+            id: act.id,
+            action: act.action,
+            details: act.details,
+            createdAt: act.created_at,
+            created_at: act.created_at,
+            profiles: act.profiles,
+            author: act.profiles,
+          })),
       },
     });
   } catch (err: any) {

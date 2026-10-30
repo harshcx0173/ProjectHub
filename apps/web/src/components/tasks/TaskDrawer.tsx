@@ -18,6 +18,13 @@ import {
 import { format } from 'date-fns';
 import { TaskStatus } from './KanbanColumn';
 
+function formatSafeDate(dateVal: any, pattern: string = 'MMM d, h:mm a'): string {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return '';
+  return format(d, pattern);
+}
+
 interface TaskDrawerProps {
   taskId: string | null;
   onClose: () => void;
@@ -767,7 +774,7 @@ export function TaskDrawer({
                           {c.author?.full_name || 'Team Member'}
                         </span>
                         <span className="text-gray-400">
-                          {format(new Date(c.createdAt), 'MMM d, h:mm a')}
+                          {formatSafeDate(c.createdAt || c.created_at)}
                         </span>
                       </div>
                       <p className="text-xs text-gray-700 whitespace-pre-wrap">{c.content}</p>
@@ -810,7 +817,7 @@ export function TaskDrawer({
                         {act.action.replace('task.', '')}
                       </p>
                       <span className="text-[10px] text-gray-400">
-                        {format(new Date(act.createdAt), 'MMM d, h:mm a')}
+                        {formatSafeDate(act.createdAt || act.created_at)}
                       </span>
                     </div>
                   </div>
