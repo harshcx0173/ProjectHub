@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { checkUserPermission } from '@/lib/permissions';
 import { recordAuditLog } from '@/lib/audit';
 
@@ -19,6 +20,8 @@ export async function GET(
     if (authError || !user) {
       return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
     }
+
+    const canManageMembers = await checkUserPermission(user.id, 'project.members.manage');
 
     const { data: members, error } = await supabase
       .from('project_members')
@@ -70,7 +73,44 @@ export async function GET(
       })
     );
 
-    return NextResponse.json({ members: formatted });
+    // Fetch candidate users not yet in this project and all dynamic roles
+    const currentMemberIds = (members || []).map((m: any) => m.user_id);
+    let availableUsersQuery = supabase
+      .from('profiles')
+      .select('id, full_name, avatar_url, designation, org_role')
+      .eq('status', 'active')
+      .order('full_name');
+
+    if (currentMemberIds.length > 0) {
+      availableUsersQuery = availableUsersQuery.not('id', 'in', `(${currentMemberIds.join(',')})`);
+    }
+
+    const [{ data: availableUsers }, { data: availableRoles }] = await Promise.all([
+      availableUsersQuery,
+      supabase
+        .from('roles')
+        .select('id, name, is_system, is_locked, description')
+        .order('is_system', { ascending: false })
+        .order('name', { ascending: true }),
+    ]);
+
+    return NextResponse.json({
+      members: formatted,
+      canManageMembers,
+      availableUsers: (availableUsers || []).map((u: any) => ({
+        id: u.id,
+        fullName: u.full_name || 'Member',
+        avatarUrl: u.avatar_url || null,
+        designation: u.designation || null,
+        orgRole: u.org_role || 'Member',
+      })),
+      availableRoles: (availableRoles || []).map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        isSystem: r.is_system,
+        description: r.description,
+      })),
+    });
   } catch (err: any) {
     return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR', message: err.message }, { status: 500 });
   }
@@ -105,15 +145,57 @@ export async function POST(
       return NextResponse.json({ error: 'VALIDATION_ERROR', message: 'userId is required' }, { status: 400 });
     }
 
+    // Verify user exists and is active
+    const { data: targetProfile, error: profileErr } = await supabase
+      .from('profiles')
+      .select('id, status')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profileErr || !targetProfile) {
+      return NextResponse.json({ error: 'USER_NOT_FOUND', message: 'User does not exist.' }, { status: 404 });
+    }
+
+    if (targetProfile.status === 'disabled') {
+      return NextResponse.json({ error: 'USER_DISABLED', message: 'Cannot add a disabled user to a project.' }, { status: 400 });
+    }
+
+    // Verify role exists
+    const { data: roleExists } = await supabase
+      .from('roles')
+      .select('name')
+      .eq('name', projectRole)
+      .maybeSingle();
+
+    if (!roleExists) {
+      return NextResponse.json({ error: 'INVALID_ROLE', message: `Role '${projectRole}' does not exist.` }, { status: 400 });
+    }
+
+    // Verify if already in project
+    const { data: existingMember } = await supabase
+      .from('project_members')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (existingMember) {
+      return NextResponse.json(
+        { error: 'ALREADY_EXISTS', message: 'This user is already a member of this project.' },
+        { status: 409 }
+      );
+    }
+
     const { data: newMember, error: insertError } = await supabase
       .from('project_members')
       .insert({
         project_id: projectId,
         user_id: userId,
         project_role: projectRole,
+        added_by: user.id,
       })
       .select()
-      .single();
+      .maybeSingle();
 
     if (insertError) {
       return NextResponse.json({ error: 'ADD_MEMBER_FAILED', message: insertError.message }, { status: 500 });
@@ -128,6 +210,73 @@ export async function POST(
     });
 
     return NextResponse.json({ member: newMember }, { status: 201 });
+  } catch (err: any) {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR', message: err.message }, { status: 500 });
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: projectId } = await params;
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
+    }
+
+    const canManageMembers = await checkUserPermission(user.id, 'project.members.manage');
+    if (!canManageMembers) {
+      return NextResponse.json({ error: 'FORBIDDEN', message: 'Missing project.members.manage permission' }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { userId, projectRole } = body;
+
+    if (!userId || !projectRole) {
+      return NextResponse.json({ error: 'VALIDATION_ERROR', message: 'userId and projectRole are required' }, { status: 400 });
+    }
+
+    // Verify role exists
+    const { data: roleExists } = await supabase
+      .from('roles')
+      .select('name')
+      .eq('name', projectRole)
+      .maybeSingle();
+
+    if (!roleExists) {
+      return NextResponse.json({ error: 'INVALID_ROLE', message: `Role '${projectRole}' does not exist.` }, { status: 400 });
+    }
+
+    const adminSupabase = createAdminClient();
+    const { data: updatedMember, error: updateError } = await adminSupabase
+      .from('project_members')
+      .update({ project_role: projectRole })
+      .eq('project_id', projectId)
+      .eq('user_id', userId)
+      .select()
+      .maybeSingle();
+
+    if (updateError) {
+      return NextResponse.json({ error: 'UPDATE_FAILED', message: updateError.message }, { status: 500 });
+    }
+
+    await recordAuditLog({
+      actorId: user.id,
+      action: 'project.member.role_change',
+      entity: 'project',
+      entityId: projectId,
+      metadata: { targetUserId: userId, newRole: projectRole },
+    });
+
+    return NextResponse.json({ member: updatedMember });
   } catch (err: any) {
     return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR', message: err.message }, { status: 500 });
   }
