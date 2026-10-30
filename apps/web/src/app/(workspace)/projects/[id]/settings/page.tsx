@@ -42,18 +42,22 @@ export default function ProjectSettingsPage() {
             .from('profiles')
             .select('org_role')
             .eq('id', user.id)
-            .single();
+            .maybeSingle();
           setIsAdmin(profile?.org_role === 'Admin');
         }
 
-        const { data: project, error } = await supabase
-          .from('projects')
-          .select('*')
-          .eq('id', projectId)
-          .single();
+        const res = await fetch(`/api/v1/projects/${projectId}`);
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          setErrorMessage(errData.message || 'Failed to load project details.');
+          return;
+        }
 
-        if (error || !project) {
-          setErrorMessage('Failed to load project details.');
+        const data = await res.json();
+        const project = data.project;
+
+        if (!project) {
+          setErrorMessage('Project not found.');
           return;
         }
 

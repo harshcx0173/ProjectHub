@@ -28,7 +28,7 @@ export default async function ProjectLayout({
     .from('projects')
     .select('*')
     .eq('id', projectId)
-    .single();
+    .maybeSingle();
 
   if (error || !project) {
     notFound();
