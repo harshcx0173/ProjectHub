@@ -84,9 +84,10 @@ All requirements for Stage A have been built, validated, and verified with zero 
 - **Invitation Role Selector** ([`/admin/invitations`](file:///d:/Learn/ProjectCRM/apps/web/src/app/(workspace)/admin/invitations/page.tsx)):
   - Updated role dropdown from hardcoded list to dynamic query from `/api/v1/admin/roles`.
   - Updated [`createInvitationSchema`](file:///d:/Learn/ProjectCRM/packages/shared/src/schemas/invitation.ts) from `z.enum(['Admin', 'Manager', 'Member'])` to `z.string().min(1)` to permit invitations for any valid custom role.
-- **Project Member Role Picker & Add Member Modal** ([`/projects/[id]/members`](file:///d:/Learn/ProjectCRM/apps/web/src/app/(workspace)/projects/[id]/members/page.tsx)):
-  - Added **"Add Member"** modal allowing project managers/admins to select active organization members and assign them any system or custom project role dynamically populated from `public.roles`.
-  - Added inline project role modifier allowing role changes directly on member cards via `PATCH /api/v1/projects/[id]/members`.
+- **Project Add Member Modal & Role Alignment** ([`/projects/[id]/members`](file:///d:/Learn/ProjectCRM/apps/web/src/app/(workspace)/projects/[id]/members/page.tsx)):
+  - Added **"Add Member"** modal allowing project managers/admins to add active organization members to projects.
+  - Aligned project role assignment directly with each member's main organization role (`profiles.org_role`), eliminating redundant project-level role overrides.
+  - Displayed unified role badge (`m.projectRole || m.orgRole`) directly on each member card.
 
 ### 3.3 Multi-Assignee & Granular Task Permissions
 - **New Permissions in Catalog**:
