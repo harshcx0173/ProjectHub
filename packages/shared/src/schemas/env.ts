@@ -31,7 +31,7 @@ export function validateEnv(rawEnv: Record<string, string | undefined>): EnvConf
       .map((err) => `  - ${err.path.join('.')}: ${err.message}`)
       .join('\n');
     throw new Error(
-      `\n❌ [Environment Configuration Error] Missing or invalid environment variables:\n${errorDetails}\nPlease check your .env.local file.\n`
+      `\n[ERROR: Environment Configuration] Missing or invalid environment variables:\n${errorDetails}\nPlease check your .env.local file.\n`
     );
   }
   return result.data;

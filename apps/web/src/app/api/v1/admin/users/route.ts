@@ -102,9 +102,24 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'UPDATE_FAILED', message: updateError.message }, { status: 500 });
     }
 
-    // If disabled, immediately revoke all active sessions
+    // If disabled, immediately revoke all active sessions and reassign or unassign tasks
     if (status === 'disabled') {
       await supabase.from('user_sessions').update({ revoked_at: new Date().toISOString() }).eq('user_id', targetUserId);
+
+      const { reassignToUserId, unassignTasks } = body;
+      if (reassignToUserId) {
+        // Reassign open tasks to the designated user
+        await supabase
+          .from('task_assignees')
+          .update({ user_id: reassignToUserId })
+          .eq('user_id', targetUserId);
+      } else if (unassignTasks) {
+        // Remove user from all assigned tasks
+        await supabase
+          .from('task_assignees')
+          .delete()
+          .eq('user_id', targetUserId);
+      }
     }
 
     await recordAuditLog({
@@ -112,7 +127,7 @@ export async function PATCH(request: NextRequest) {
       action: status === 'disabled' ? 'user.disable' : 'user.role_change',
       entity: 'profile',
       entityId: targetUserId,
-      metadata: updates,
+      metadata: { ...updates, reassignToUserId: body.reassignToUserId, unassignTasks: body.unassignTasks },
     });
 
     return NextResponse.json({ user: updated });

@@ -140,7 +140,7 @@ export default function ProjectBoardPage({
             </div>
             <h3 className="text-sm font-semibold text-gray-900">No columns defined</h3>
             <p className="text-xs text-gray-500 mt-1 max-w-sm">
-              Columns for this project haven't been generated yet.
+              Columns for this project haven&apos;t been generated yet.
             </p>
           </div>
         ) : viewMode === 'board' ? (

@@ -1,0 +1,44 @@
+name: Weekly Database Backup
+
+on:
+  schedule:
+    # Run every Sunday at 02:00 UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    name: Export & Archive Database Backup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Dump Remote Supabase Database
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_CONNECTION_STRING }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::SUPABASE_DB_CONNECTION_STRING secret is not configured."
+            exit 1
+          fi
+          mkdir -p backups
+          BACKUP_DATE=$(date +"%Y%m%d_%H%M%S")
+          echo "Dumping database roles, schema and data..."
+          supabase db dump --db-url "$SUPABASE_DB_URL" --schema public -f "backups/project_hub_${BACKUP_DATE}_public.sql"
+          supabase db dump --db-url "$SUPABASE_DB_URL" --data-only --schema public -f "backups/project_hub_${BACKUP_DATE}_data.sql"
+          gzip backups/*.sql
+          echo "Backup created successfully."
+
+      - name: Upload Backup Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-database-backup
+          path: backups/*.sql.gz
+          retention-days: 30
+

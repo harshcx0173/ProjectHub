@@ -106,6 +106,73 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PATCH(request: NextRequest) {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
+    }
+
+    const hasInvitePerm = await checkUserPermission(user.id, 'org.invitations.manage');
+    if (!hasInvitePerm) {
+      return NextResponse.json({ error: 'FORBIDDEN', message: 'Missing org.invitations.manage permission' }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const inviteId = body.id;
+
+    if (!inviteId) {
+      return NextResponse.json({ error: 'VALIDATION_ERROR', message: 'Invitation ID is required' }, { status: 400 });
+    }
+
+    // Generate fresh token
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: updatedInvite, error: updateError } = await supabase
+      .from('invitations')
+      .update({
+        token_hash: tokenHash,
+        expires_at: expiresAt,
+        revoked_at: null,
+      })
+      .eq('id', inviteId)
+      .select()
+      .single();
+
+    if (updateError) {
+      return NextResponse.json({ error: 'UPDATE_FAILED', message: updateError.message }, { status: 500 });
+    }
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:4321';
+    const inviteLink = `${appUrl}/invite/accept?token=${rawToken}`;
+
+    await recordAuditLog({
+      actorId: user.id,
+      action: 'invitation.resend',
+      entity: 'invitation',
+      entityId: inviteId,
+      metadata: { email: updatedInvite.email },
+    });
+
+    return NextResponse.json({
+      success: true,
+      inviteLink,
+      invitation: updatedInvite,
+      message: 'Invitation refreshed with a new 7-day token',
+    });
+  } catch (err: any) {
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR', message: err.message }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: NextRequest) {
   try {
     const supabase = await createClient();

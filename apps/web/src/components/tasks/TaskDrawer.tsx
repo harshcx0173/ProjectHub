@@ -11,6 +11,8 @@ import {
   AlertCircle,
   Plus,
   Send,
+  Eye,
+  Tag,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { TaskStatus } from './KanbanColumn';
@@ -35,6 +37,14 @@ export function TaskDrawer({
   const [newComment, setNewComment] = useState('');
   const [newChecklistTitle, setNewChecklistTitle] = useState('');
   const [conflictError, setConflictError] = useState<string | null>(null);
+
+  // Watchers & Labels state
+  const [isWatching, setIsWatching] = useState(false);
+  const [watcherCount, setWatcherCount] = useState(0);
+  const [attachedLabels, setAttachedLabels] = useState<any[]>([]);
+  const [availableLabels, setAvailableLabels] = useState<any[]>([]);
+  const [showLabelPicker, setShowLabelPicker] = useState(false);
+  const [newLabelName, setNewLabelName] = useState('');
 
   // Load task details when taskId changes
   useEffect(() => {
@@ -61,10 +71,78 @@ export function TaskDrawer({
         if (isMounted) setLoading(false);
       });
 
+    // Load watchers
+    fetch(`/api/v1/tasks/${taskId}/watchers`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (isMounted && data) {
+          setIsWatching(!!data.isWatching);
+          setWatcherCount(data.watcherCount || 0);
+        }
+      })
+      .catch(console.error);
+
+    // Load labels
+    fetch(`/api/v1/tasks/${taskId}/labels`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (isMounted && data) {
+          setAttachedLabels(data.attachedLabels || []);
+          setAvailableLabels(data.availableLabels || []);
+        }
+      })
+      .catch(console.error);
+
     return () => {
       isMounted = false;
     };
   }, [taskId]);
+
+  const handleToggleWatch = async () => {
+    if (!taskId) return;
+    try {
+      const res = await fetch(`/api/v1/tasks/${taskId}/watchers`, { method: 'POST' });
+      const data = await res.json();
+      setIsWatching(data.isWatching);
+      setWatcherCount((prev) => (data.isWatching ? prev + 1 : Math.max(0, prev - 1)));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAttachLabel = async (labelId?: string, name?: string) => {
+    if (!taskId) return;
+    try {
+      const res = await fetch(`/api/v1/tasks/${taskId}/labels`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ labelId, name }),
+      });
+
+      if (res.ok) {
+        const refresh = await fetch(`/api/v1/tasks/${taskId}/labels`);
+        const data = await refresh.json();
+        setAttachedLabels(data.attachedLabels || []);
+        setAvailableLabels(data.availableLabels || []);
+        setShowLabelPicker(false);
+        setNewLabelName('');
+        onTaskUpdated();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDetachLabel = async (labelId: string) => {
+    if (!taskId) return;
+    try {
+      await fetch(`/api/v1/tasks/${taskId}/labels?labelId=${labelId}`, { method: 'DELETE' });
+      setAttachedLabels((prev) => prev.filter((l) => l.id !== labelId));
+      onTaskUpdated();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   if (!taskId) return null;
 
@@ -237,6 +315,20 @@ export function TaskDrawer({
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={handleToggleWatch}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+              isWatching
+                ? 'bg-primary/10 border-primary text-primary'
+                : 'border-border text-gray-600 hover:bg-gray-100'
+            }`}
+            title={isWatching ? 'Stop watching' : 'Watch this task'}
+          >
+            <Eye className="h-3.5 w-3.5" />
+            <span>{isWatching ? 'Watching' : 'Watch'}</span>
+            <span className="text-[10px] opacity-75">({watcherCount})</span>
+          </button>
+          <button
+            type="button"
             onClick={handleDeleteTask}
             className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
             title="Delete task"
@@ -287,6 +379,86 @@ export function TaskDrawer({
               }}
               className="w-full text-base font-semibold text-gray-900 border border-transparent hover:border-gray-300 focus:border-primary focus:outline-none rounded-lg p-1.5 transition-colors"
             />
+          </div>
+
+          {/* Labels Section */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                <Tag className="h-3 w-3" />
+                <span>Labels</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowLabelPicker(!showLabelPicker)}
+                className="text-[11px] text-primary hover:underline font-semibold flex items-center gap-1"
+              >
+                <Plus className="h-3 w-3" />
+                Add Label
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5 items-center">
+              {attachedLabels.map((lbl) => (
+                <span
+                  key={lbl.id}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold text-white shadow-2xs"
+                  style={{ backgroundColor: lbl.color || '#2563EB' }}
+                >
+                  <span>{lbl.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleDetachLabel(lbl.id)}
+                    className="hover:opacity-75"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                </span>
+              ))}
+
+              {attachedLabels.length === 0 && !showLabelPicker && (
+                <span className="text-[11px] text-gray-400 italic">No labels attached</span>
+              )}
+            </div>
+
+            {showLabelPicker && (
+              <div className="mt-2 p-2.5 rounded-xl border border-border bg-gray-50/80 space-y-2">
+                <div className="text-[11px] font-medium text-gray-600">Available Labels:</div>
+                <div className="flex flex-wrap gap-1">
+                  {availableLabels
+                    .filter((al) => !attachedLabels.some((at) => at.id === al.id))
+                    .map((al) => (
+                      <button
+                        type="button"
+                        key={al.id}
+                        onClick={() => handleAttachLabel(al.id)}
+                        className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-white hover:opacity-85"
+                        style={{ backgroundColor: al.color || '#2563EB' }}
+                      >
+                        + {al.name}
+                      </button>
+                    ))}
+                </div>
+
+                <div className="flex gap-1.5 pt-1 border-t border-gray-200">
+                  <input
+                    type="text"
+                    placeholder="New label name..."
+                    value={newLabelName}
+                    onChange={(e) => setNewLabelName(e.target.value)}
+                    className="flex-1 text-xs px-2 py-1 rounded border border-border bg-white"
+                  />
+                  <button
+                    type="button"
+                    disabled={!newLabelName.trim()}
+                    onClick={() => handleAttachLabel(undefined, newLabelName.trim())}
+                    className="px-2.5 py-1 bg-primary text-white rounded text-xs font-semibold disabled:opacity-50"
+                  >
+                    Create
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Properties Grid: Status, Priority, Due Date */}

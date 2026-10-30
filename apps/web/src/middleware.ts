@@ -1,7 +1,71 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { checkRateLimit } from '@/lib/security/rate-limiter';
+
+function applySecurityHeaders(res: NextResponse): NextResponse {
+  res.headers.set('X-Content-Type-Options', 'nosniff');
+  res.headers.set('X-Frame-Options', 'DENY');
+  res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.headers.set('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
+  res.headers.set(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; media-src 'self' blob: https:; object-src 'none'; frame-ancestors 'none';"
+  );
+  if (process.env.NODE_ENV === 'production') {
+    res.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  return res;
+}
 
 export async function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+
+  // CSRF Protection for state-changing API requests
+  if (pathname.startsWith('/api/') && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) {
+    const origin = request.headers.get('origin');
+    const host = request.headers.get('host');
+    if (origin && host) {
+      try {
+        const originHost = new URL(origin).host;
+        if (originHost !== host) {
+          return applySecurityHeaders(
+            NextResponse.json(
+              { error: 'FORBIDDEN', message: 'Cross-origin request rejected (CSRF protection).' },
+              { status: 403 }
+            )
+          );
+        }
+      } catch {
+        return applySecurityHeaders(
+          NextResponse.json(
+            { error: 'FORBIDDEN', message: 'Invalid origin header.' },
+            { status: 403 }
+          )
+        );
+      }
+    }
+  }
+
+  // Rate Limiting for sensitive endpoints (Auth, Invitations, Password)
+  if (pathname.startsWith('/api/v1/auth/') || pathname.startsWith('/api/v1/invitations')) {
+    const forwarded = request.headers.get('x-forwarded-for');
+    const ip = forwarded ? (forwarded.split(',')[0] || '').trim() || '127.0.0.1' : '127.0.0.1';
+    const rateLimit = await checkRateLimit(`ip:${ip}:${pathname}`, { limit: 30, windowSeconds: 60 });
+    if (!rateLimit.success) {
+      return applySecurityHeaders(
+        NextResponse.json(
+          { error: 'RATE_LIMIT_EXCEEDED', message: 'Too many requests. Please try again later.' },
+          {
+            status: 429,
+            headers: {
+              'Retry-After': String(rateLimit.reset),
+            },
+          }
+        )
+      );
+    }
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -12,7 +76,7 @@ export async function middleware(request: NextRequest) {
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !anonKey) {
-    return response;
+    return applySecurityHeaders(response);
   }
 
   const supabase = createServerClient(supabaseUrl, anonKey, {
@@ -41,8 +105,6 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const pathname = request.nextUrl.pathname;
-
   // Public paths allowed without authentication
   const isPublicPath =
     pathname.startsWith('/login') ||
@@ -55,14 +117,16 @@ export async function middleware(request: NextRequest) {
 
   if (!user && !isPublicPath) {
     if (pathname.startsWith('/api/')) {
-      return NextResponse.json(
-        { error: 'UNAUTHORIZED', message: 'Authentication required' },
-        { status: 401 }
+      return applySecurityHeaders(
+        NextResponse.json(
+          { error: 'UNAUTHORIZED', message: 'Authentication required' },
+          { status: 401 }
+        )
       );
     }
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirectTo', pathname);
-    return NextResponse.redirect(loginUrl);
+    return applySecurityHeaders(NextResponse.redirect(loginUrl));
   }
 
   if (user) {
@@ -77,14 +141,16 @@ export async function middleware(request: NextRequest) {
       if (profile.status === 'disabled') {
         await supabase.auth.signOut();
         if (pathname.startsWith('/api/')) {
-          return NextResponse.json(
-            { error: 'ACCOUNT_DEACTIVATED', message: 'Your account has been deactivated.' },
-            { status: 403 }
+          return applySecurityHeaders(
+            NextResponse.json(
+              { error: 'ACCOUNT_DEACTIVATED', message: 'Your account has been deactivated.' },
+              { status: 403 }
+            )
           );
         }
         const disabledUrl = new URL('/login', request.url);
         disabledUrl.searchParams.set('error', 'deactivated');
-        return NextResponse.redirect(disabledUrl);
+        return applySecurityHeaders(NextResponse.redirect(disabledUrl));
       }
 
       // Mandatory 2FA for Admin (exempt TOTP setup APIs)
@@ -94,21 +160,23 @@ export async function middleware(request: NextRequest) {
 
       if (profile.org_role === 'Admin' && !profile.is_totp_enabled && !isTotpAllowed) {
         if (pathname.startsWith('/api/')) {
-          return NextResponse.json(
-            { error: '2FA_REQUIRED', message: 'Two-factor authentication setup is mandatory for Administrators.' },
-            { status: 403 }
+          return applySecurityHeaders(
+            NextResponse.json(
+              { error: '2FA_REQUIRED', message: 'Two-factor authentication setup is mandatory for Administrators.' },
+              { status: 403 }
+            )
           );
         }
-        return NextResponse.redirect(new URL('/auth/setup-2fa', request.url));
+        return applySecurityHeaders(NextResponse.redirect(new URL('/auth/setup-2fa', request.url)));
       }
 
       if (pathname === '/login') {
-        return NextResponse.redirect(new URL('/', request.url));
+        return applySecurityHeaders(NextResponse.redirect(new URL('/', request.url)));
       }
     }
   }
 
-  return response;
+  return applySecurityHeaders(response);
 }
 
 export const config = {

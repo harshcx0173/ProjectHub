@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Copy, Check, Trash2, AlertCircle, Clock } from 'lucide-react';
+import { Plus, Copy, Check, Trash2, AlertCircle, Clock, RotateCcw } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function AdminInvitationsPage() {
@@ -59,6 +59,25 @@ export default function AdminInvitationsPage() {
       setError(err.message);
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleResend = async (id: string) => {
+    try {
+      const res = await fetch('/api/v1/invitations', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to resend invitation');
+
+      setGeneratedLink(data.inviteLink);
+      setCopied(false);
+      await fetchInvitations();
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
@@ -193,14 +212,24 @@ export default function AdminInvitationsPage() {
                   </span>
                 </td>
                 <td className="py-3 px-4 text-right">
-                  <button
-                    type="button"
-                    onClick={() => handleRevoke(inv.id)}
-                    className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                    title="Revoke invitation"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleResend(inv.id)}
+                      className="p-1 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
+                      title="Resend invitation (generate new token)"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRevoke(inv.id)}
+                      className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      title="Revoke invitation"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

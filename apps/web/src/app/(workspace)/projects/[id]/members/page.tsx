@@ -42,7 +42,7 @@ export default function ProjectMembersPage({
             <h1 className="text-xl font-bold text-gray-900 tracking-tight">Project Members</h1>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Team members with access to this project's tasks, files, and discussion channel.
+            Team members with access to this project&apos;s tasks, files, and discussion channel.
           </p>
         </div>
       </div>

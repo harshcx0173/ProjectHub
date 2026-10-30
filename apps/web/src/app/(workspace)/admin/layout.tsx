@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { Users, Mail, Shield, History, Settings, ShieldAlert } from 'lucide-react';
+import { Users, Mail, Shield, History, Settings, ShieldAlert, FolderKanban } from 'lucide-react';
 
 export default function AdminLayout({
   children,
@@ -30,6 +30,13 @@ export default function AdminLayout({
           >
             <Mail className="h-3.5 w-3.5 text-gray-500" />
             Invitations
+          </Link>
+          <Link
+            href="/admin/projects"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-100 transition-colors"
+          >
+            <FolderKanban className="h-3.5 w-3.5 text-gray-500" />
+            Projects
           </Link>
           <Link
             href="/admin/roles"

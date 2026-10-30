@@ -25,20 +25,22 @@ The main idea that makes it different from typical tools: the task board and the
 |---|---|
 | Users | Around 500, one company |
 | Access | Invitation only, public signup disabled everywhere |
-| Roles | Admin, Manager, Member, plus custom roles created by Admin |
+| Roles | Admin (locked), Manager (default, editable permissions), Member (default, editable permissions), plus custom roles created by Admin. System roles cannot be deleted or renamed. "Reset to default" for Manager and Member. |
+| Permissions | Granular keys. Includes `task.assign`, `task.self_assign`, and `task.assignable`. Locked permissions cannot be granted to non-Admins. |
 | Layout | Left: sidebar. Center: task board (per project). Right: project chat. Top: navbar with logo area, search, bell, avatar |
+| Personal Space | Dedicated `/personal` sticky notes space for all active users. Private via strict RLS. Warm off-white canvas with coral add button. Plain text and checklist modes. Note-to-task conversion. |
+| Email | SMTP via Nodemailer (Gmail / Google Workspace App Password support) with Admin choice to "Send email" or "Copy link". |
 | Project icon | Editable by Admin only |
 | Messaging | Microsoft Teams style, no calling features |
-| Profile | Users can change their own profile picture |
-| Chat uploads | Images, audio, links, documents, meeting recordings |
-| @ai in project chat | Anyone can use it, only inside project channels, only about that project |
-| Messages menu | Separate sidebar menu: user-to-user DMs and groups, plus a personal AI Assistant limited to the user's assigned projects |
-| Vault | One Vault tab per project. All project members can view and add. Only Admin can edit and delete |
-| AI provider | Groq (existing API key), free tier |
-| Stack | Next.js + Supabase |
-| Hosting | Free for now. Vercel Hobby for development. Production on a commercially allowed free host (Cloudflare) or Vercel Pro later |
-| Platform | Web now. Mobile app later (structure must allow it) |
-| UI | Modern, professional SaaS, LIGHT theme only, no dark colors, no emojis anywhere in the UI, proper icons and elements only |
+| Profile | Users can change their own profile picture (client-side resize and EXIF metadata stripping) |
+| Chat uploads | Images, audio, links, documents, meeting recordings (Supabase Storage with size limits and MIME allowlists) |
+| @ai in project chat | Phase 2: Anyone can use it, only inside project channels, only about that project |
+| Messages menu | Phase 2: Separate sidebar menu: user-to-user DMs and groups, plus a personal AI Assistant limited to the user's assigned projects |
+| Vault | Phase 2: One Vault tab per project. All project members can view and add. Only Admin can edit and delete |
+| AI provider | Phase 2: Groq (existing API key), free tier |
+| Stack | Next.js 15 (App Router, Port 4321) + Supabase (Cloud Postgres, Auth, Realtime, Storage) |
+| Hosting & Dev | Local dev on port 4321. Production on Cloudflare or Vercel Pro later |
+| UI | Modern, professional SaaS, LIGHT theme only, no dark colors, zero emojis in UI elements/reactions, Inter font, design tokens |
 
 ---
 
@@ -79,6 +81,7 @@ Three zones plus a navbar:
 Top (fixed):
 - Home (dashboard)
 - My Tasks (my assigned tasks across projects)
+- Personal Space (Sticky Notes: `/personal`)
 - Messages (Phase 2: DMs, groups, personal AI) with unread badge
 - Inbox / Notifications
 - Search (Ctrl+K)
@@ -110,68 +113,97 @@ Permissions are fixed building blocks. A role is a bundle of permissions. Nothin
 
 - Org role: one per user. Controls organization-wide permissions (create projects, admin panel, invitations, roles).
 - Project role: one per user per project (stored on the project membership). Controls what the user can do inside that project. The same user can have different roles in different projects.
-- System roles (Admin, Manager, Member) cannot be deleted. The Admin role is locked.
-- Custom roles are created by Admin through a permission checklist.
-- Some permissions are Locked: only Admin has them and they cannot be assigned to any custom role (role management, Vault edit, Vault delete).
+- System roles: Admin, Manager, Member. System roles cannot be deleted or renamed.
+- Admin role is locked: its permissions cannot be modified or reduced.
+- Default roles (Manager, Member) are editable: Admin can customize their permission sets. A "Reset to default" action restores their initial factory permission sets.
+- Custom roles are created by Admin through a permission checklist, and can be edited, renamed, or deleted (when no users are assigned). Custom roles appear identically to system roles across all UIs: Admin Users list, role filter dropdowns, role assignment dialogs, and invitation pickers.
+- Locked permissions: only Admin has them and they can NEVER be assigned to any non-Admin role (enforced in database RLS/triggers and server API validation):
+  - `org.roles.manage` (role management)
+  - `vault.edit`, `vault.delete` (Phase 2 Vault sensitive operations)
+- Role modification safeguards:
+  - Changing a role's permissions shows a confirmation modal indicating the exact count of affected users.
+  - Audit logging records the exact permission diff (`permissions_added`, `permissions_removed`).
+  - Active sessions of all users with that role are invalidated immediately, forcing token refresh on the next request.
 - The last Admin can never be demoted, disabled or deleted.
-- Admin can view and manage every project. For AI scope purposes, membership still means explicit membership (Admin gets no hidden extra data access in the AI).
+- Admin can view and manage every project. For AI scope purposes (Phase 2), membership still means explicit membership (Admin gets no hidden extra data access in the AI).
 - All permission checks are enforced in the database (RLS) and again in server endpoints. The UI only hides buttons for convenience.
 
 ### 5.2 Permission matrix
 
-Yes = allowed. No = not allowed. Locked = Admin only and not assignable. Config = Admin decides when building a custom role.
+Yes = allowed. No = not allowed. Locked = Admin only and not assignable to any other role. Config = Admin decides (editable for Manager, Member, and Custom roles).
 
 | Permission | Admin | Manager | Member | Custom |
 |---|---|---|---|---|
-| Invite new users | Yes | No | No | No |
-| Create and edit roles | Locked | No | No | No |
-| Create project | Yes | Yes | No | Config |
-| Edit project name, icon, color | Yes | No | No | No |
-| Archive or delete project | Yes | No | No | No |
-| Add or remove project members | Yes | Yes (own projects) | No | Config |
-| Create and edit tasks | Yes | Yes | Yes | Config |
-| Delete tasks | Yes | Yes | Own only | Config |
-| Read and send project chat | Yes | Yes | Yes | Config |
-| Edit or delete own message | Yes | Yes | Yes | Config |
-| Delete any message (moderation) | Yes | Yes | No | No |
-| Upload files | Yes | Yes | Yes | Config |
-| Delete any file | Yes | Yes | Own only | No |
-| Use @ai (Phase 2) | Yes | Yes | Yes | Yes |
-| Turn AI on or off per project (Phase 2) | Yes | Yes | No | No |
-| Vault view (Phase 2) | Yes | Yes | Yes | Yes |
-| Vault add (Phase 2) | Yes | Yes | Yes | Yes |
-| Vault edit (Phase 2) | Locked | No | No | No |
-| Vault delete (Phase 2) | Locked | No | No | No |
-| View vault access log (Phase 2) | Yes | No | No | No |
-| View audit logs | Yes | No | No | No |
+| Invite new users (`org.invitations.manage`) | Yes | Config (Default: No) | Config (Default: No) | Config |
+| Create and edit roles (`org.roles.manage`) | Locked | No | No | No |
+| View audit logs (`org.audit.view`) | Yes | Config (Default: No) | Config (Default: No) | Config |
+| Manage organization settings (`org.settings.manage`) | Yes | Config (Default: No) | Config (Default: No) | Config |
+| Manage users (`org.users.manage`) | Yes | Config (Default: No) | Config (Default: No) | Config |
+| Create project (`project.create`) | Yes | Config (Default: Yes) | Config (Default: No) | Config |
+| Edit project (`project.edit`) | Yes | Config (Default: Yes) | Config (Default: No) | Config |
+| Archive project (`project.archive`) | Yes | Config (Default: No) | Config (Default: No) | Config |
+| Add/remove project members (`project.members.manage`) | Yes | Config (Default: Yes) | Config (Default: No) | Config |
+| Create tasks (`task.create`) | Yes | Config (Default: Yes) | Config (Default: Yes) | Config |
+| Edit tasks (`task.edit`) | Yes | Config (Default: Yes) | Config (Default: Yes) | Config |
+| Assign tasks to others (`task.assign`) | Yes | Config (Default: Yes) | Config (Default: No) | Config |
+| Assign tasks to oneself (`task.self_assign`) | Yes | Config (Default: Yes) | Config (Default: Yes) | Config |
+| Can be assigned to tasks (`task.assignable`) | Yes | Config (Default: Yes) | Config (Default: Yes) | Config |
+| Delete tasks (`task.delete`) | Yes | Config (Default: Yes) | Config (Default: No) | Config |
+| Delete own tasks (`task.delete_own`) | Yes | Config (Default: Yes) | Config (Default: Yes) | Config |
+| Read and send chat (`chat.read`, `chat.send`) | Yes | Config (Default: Yes) | Config (Default: Yes) | Config |
+| Edit/delete own chat message (`chat.message.edit_own`, `chat.message.delete_own`) | Yes | Config (Default: Yes) | Config (Default: Yes) | Config |
+| Delete any message (`chat.message.delete_any`) | Yes | Config (Default: Yes) | Config (Default: No) | Config |
+| Pin chat message (`chat.message.pin`) | Yes | Config (Default: Yes) | Config (Default: No) | Config |
+| Upload files (`file.upload`) | Yes | Config (Default: Yes) | Config (Default: Yes) | Config |
+| Delete own file (`file.delete_own`) | Yes | Config (Default: Yes) | Config (Default: Yes) | Config |
+| Delete any file (`file.delete_any`) | Yes | Config (Default: Yes) | Config (Default: No) | Config |
+| Use @ai (Phase 2: `ai.use`) | Yes | Config (Default: Yes) | Config (Default: Yes) | Config |
+| Turn AI on/off per project (Phase 2: `ai.project.toggle`) | Yes | Config (Default: Yes) | Config (Default: No) | Config |
+| Vault view (Phase 2: `vault.view`) | Yes | Config (Default: Yes) | Config (Default: Yes) | Config |
+| Vault add (Phase 2: `vault.add`) | Yes | Config (Default: Yes) | Config (Default: Yes) | Config |
+| Vault edit (Phase 2: `vault.edit`) | Locked | No | No | No |
+| Vault delete (Phase 2: `vault.delete`) | Locked | No | No | No |
+| View vault log (Phase 2: `vault.log.view`) | Yes | Config (Default: No) | Config (Default: No) | Config |
 | Change own profile and photo | Yes | Yes | Yes | Yes |
 
 ### 5.3 Permission key catalog (single source of truth)
-This catalog is defined once, seeded into the database, and shared with the frontend through one shared package. No scattered permission strings.
+This catalog is defined once, seeded into the database, and shared with the frontend through `@project-hub/shared`.
 
 Organization scope:
-- org.settings.manage
-- org.users.view, org.users.manage, org.users.disable
-- org.invitations.manage
-- org.roles.manage (locked)
-- org.audit.view
-- project.create
+- `org.settings.manage`
+- `org.users.view`, `org.users.manage`, `org.users.disable`
+- `org.invitations.manage`
+- `org.roles.manage` (locked to Admin)
+- `org.audit.view`
+- `project.create`
 
 Project scope:
-- project.view
-- project.edit (name, description, icon, color)
-- project.archive
-- project.members.manage
-- project.settings.manage
-- task.create, task.edit, task.assign, task.delete, task.delete_own
-- chat.read, chat.send
-- chat.message.edit_own, chat.message.delete_own, chat.message.delete_any, chat.message.pin
-- file.upload, file.delete_own, file.delete_any
+- `project.view`
+- `project.edit`
+- `project.archive`
+- `project.members.manage`
+- `project.settings.manage`
+- `task.create`, `task.edit`, `task.delete`, `task.delete_own`
+- `task.assign` (assign tasks to others)
+- `task.self_assign` (assign tasks to self)
+- `task.assignable` (eligible to be assigned tasks)
+- `chat.read`, `chat.send`
+- `chat.message.edit_own`, `chat.message.delete_own`, `chat.message.delete_any`, `chat.message.pin`
+- `file.upload`, `file.delete_own`, `file.delete_any`
 
 Phase 2 keys:
-- vault.view, vault.add, vault.edit (locked), vault.delete (locked), vault.log.view
-- ai.use, ai.project.toggle, ai_assistant.use
-- dm.create, group.create
+- `vault.view`, `vault.add`, `vault.edit` (locked), `vault.delete` (locked), `vault.log.view`
+- `ai.use`, `ai.project.toggle`, `ai_assistant.use`
+- `dm.create`, `group.create`
+
+### 5.4 Task Assignment Rules
+- Assignee selection validates that candidate members hold `task.assignable`.
+- Users with only `task.self_assign` can add/remove themselves, but cannot add/remove others.
+- Users with `task.assign` can assign/unassign any eligible member.
+- When removing a member from a project or disabling a user, an explicit prompt offers:
+  1. Reassign all open tasks to another designated member.
+  2. Unassign all open tasks.
+- Kanban and List views provide a one-click "Assigned to me" filter.
 
 ---
 
@@ -191,9 +223,13 @@ Phase 2 keys:
 - Attachments: images (inline preview), audio (in-app player, voice note recording), documents, meeting recordings (video or audio with player).
 - Search inside chat.
 
-### 6.2 Notifications
+### 6.2 Notifications and email
 - In-app bell with realtime updates.
-- Email for invitations and optional digests.
+- Email for invitations and alerts:
+  - Production-ready SMTP adapter via Nodemailer supporting Google Workspace / Gmail App Password or custom SMTP relay.
+  - Validated environment variables: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_NAME`, `SMTP_FROM_EMAIL`.
+  - Invitation creation offers Admin a clear dual choice: "Send email invitation" (direct SMTP delivery) or "Copy invite link" (manual distribution).
+  - Real error reporting: if SMTP sending fails, the system presents the exact error message, retains the invitation token for immediate manual copy, and writes an audit log entry.
 - Browser push through PWA.
 - Per-user preferences (everything, mentions only, none).
 - Due-soon reminders through a scheduled job.
@@ -336,14 +372,18 @@ Files:
 Notifications and system:
 - notifications, notification_prefs, push_subscriptions
 - audit_logs: actor, action, entity, entity id, metadata, ip, time
-- org_settings: company name, logo, timezone, working days
+- org_settings: company name, logo, timezone, working days, personal space limits (max notes, max chars, retention days)
+
+Personal Space:
+- personal_notes: id, user_id (FK to profiles), title, content_type ('text' | 'checklist'), content, checklist_items (jsonb), color, is_pinned, is_archived, is_deleted, deleted_at, position, version (optimistic lock), created_at, updated_at
+- Strict owner-only RLS: `auth.uid() = user_id`. Zero Admin or Manager bypass. Excluded from global search. Audit logs store action and note ID only (never note text).
 
 Phase 2 additions:
 - ai_requests (user, project, scope project IDs, tokens, time), optional ai_threads
 - vault_entries, vault_entry_versions, vault_access_log
 - user_blocks
 
-Relations in short: user to many projects (through project_members), each project owns tasks, a channel, files and vault entries. A message may belong to a thread and may link to one task.
+Relations in short: user to many projects (through project_members), each project owns tasks, a channel, files and vault entries. A message may belong to a thread and may link to one task. Personal notes belong strictly to individual users.
 
 ---
 
@@ -361,25 +401,43 @@ C. Home: my tasks today, overdue, pinned projects, recent activity, unread menti
 
 D. My Tasks: all my tasks across projects with filters (project, due date, priority).
 
-E. Project workspace (main screen): board and chat side by side. Tabs: Board, Files, Members, Settings (Vault in Phase 2). View switcher: Board, List (Calendar later). Task drawer for details.
+E. Project workspace (main screen): board and chat side by side. Tabs: Board, Files, Members, Settings (Vault in Phase 2). View switcher: Board, List (Calendar later). Task drawer for details. Includes "Assigned to me" filter.
 
 F. Chat panel: message list, composer with attach, mention, link, voice note. Hover actions: reply, react, create task, pin, edit, delete.
 
 G. Files tab: all project files with filters and preview.
 
-H. Members tab: project members, roles, add and remove.
+H. Members tab: project members, roles, add and remove. Member removal prompts for task reassignment or unassigning.
 
 I. Project settings: name, description, icon, color, group, archive.
 
-J. Global search (Ctrl+K): only results the user may see.
+J. Global search (Ctrl+K): only results the user may see (excludes Personal Space and Vault).
 
 K. Notifications: bell dropdown and full page.
 
-L. Profile and settings: photo, name, designation, timezone, notification preferences, password, 2FA, active sessions.
+L. Profile and settings: photo (client-side resize, metadata stripping), name, designation, timezone, notification preferences, password change, 2FA with recovery codes, active sessions with revocation.
 
-M. Admin Panel (Admin only): Users (role change, disable, offboarding), Invitations (create, resend, revoke, copy link), Roles (system roles locked, custom role builder), Projects (all projects, icon edit, archive), Audit logs, Organization settings.
+M. Admin Panel (Admin only):
+1. Users: user list, role changer (includes custom roles), disable user, offboarding with task reassignment.
+2. Invitations: create (SMTP email sending OR manual copy link), resend, revoke.
+3. Roles: system roles (Admin locked; Manager and Member editable with "Reset to default"), custom role creator/editor, affected user confirmation, permission diff audit.
+4. Projects: all projects list, icon/color editing, archive/unarchive.
+5. Audit logs: search and filter by actor, action, date.
+6. Organization settings: company name, logo, personal space limits.
 
-N. Phase 2 screens: Vault tab, Messages menu (DMs, groups, AI Assistant), project AI settings.
+N. Personal Space (`/personal`):
+1. Available to all active roles without permission gating. Disabled users lose access immediately.
+2. Warm off-white canvas (`#FAF9F6`) with distinctive rounded coral floating/header add button (`#FF6B6B`) containing a plus icon.
+3. Instant note creation via button or shortcut. Debounced autosave (500ms) with save status indicator.
+4. Plain text or checklist mode with completed strike-through.
+5. Pastel color tokens meeting WCAG AA contrast.
+6. Pin, archive, soft-delete to trash with 30-day restore, drag-to-reorder, grid/list view toggle.
+7. In-space instant search and color filter.
+8. Convert note to company project task (selects destination project, column, assignees).
+9. Pure plain text rendering (no HTML/script execution).
+10. Strict owner-only privacy enforced by RLS.
+
+O. Phase 2 screens: Vault tab, Messages menu (DMs, groups, AI Assistant), project AI settings.
 
 ---
 
@@ -417,47 +475,47 @@ Operations
 ## 13. Tech stack (free)
 
 Frontend (web)
-- Next.js (App Router) with TypeScript (strict)
-- Tailwind CSS and shadcn/ui
-- TanStack Query (data cache), TanStack Virtual (long chat lists), TanStack Table
+- Next.js 15 (App Router, Port 4321) with TypeScript (strict)
+- Tailwind CSS and shadcn/ui (Light theme only, Inter font, design tokens)
+- TanStack Query / SWR (client cache with Supabase Realtime-driven cache invalidation)
+- TanStack Virtual (long chat lists), TanStack Table
 - React Hook Form and Zod (forms and validation)
-- dnd-kit (Kanban drag and drop)
+- dnd-kit (Kanban and sticky notes drag and drop)
 - TipTap (rich text composer)
 - cmdk (command palette)
-- FullCalendar or react-big-calendar (calendar view, later)
-- Recharts (reports, later)
-- Lucide icons, Inter font
+- Lucide icons (no emojis anywhere)
 - Browser MediaRecorder for voice notes
 
 Backend and data
-- Supabase Free: Postgres, Auth (email and password, TOTP 2FA, optional Google login), Realtime, RLS
+- Supabase Free: Postgres, Auth (email and password, TOTP 2FA, session revocation), Realtime, RLS
+- Performance architecture:
+  - Explicit b-tree indexes on all foreign keys, lookup join tables, and RLS filter columns
+  - Statement-level RLS optimization via `EXISTS` subqueries (zero per-row recursive function overhead)
+  - React Server Components parallel data fetching (`Promise.all`)
+  - Cursor pagination for high-volume endpoints (messages, activity, tasks)
 - Postgres full-text search for search (no separate search service)
 - pg_cron and Supabase Edge Functions for scheduled jobs (due reminders, cleanup)
 - Next.js route handlers as a thin, token-authenticated API layer for sensitive logic
-- Upstash Redis free tier for rate limiting (fallback: a Postgres table)
+- Upstash Redis free tier strictly scoped for rate limiting, settings caching, and permission catalogs
 
 Files, email, AI
-- Cloudflare R2 for files (about 10 GB free, S3 compatible, presigned URLs)
-- Resend free tier for email (needs a domain)
-- Groq for AI, Vercel AI SDK for streaming and provider abstraction
-- Web Push (PWA) for notifications, later FCM for mobile
-- AES-256-GCM envelope encryption for the Vault
+- Supabase Storage (behind storage interface, ready for Cloudflare R2 migration; size limits & allowlists)
+- Nodemailer SMTP adapter (supports Google Workspace / Gmail App Password or custom SMTP relay)
+- Resend free tier supported as optional provider adapter
+- Groq for AI (Phase 2), Vercel AI SDK for streaming and provider abstraction
+- Web Push (PWA) for notifications
+- AES-256-GCM envelope encryption for the Vault (Phase 2)
 
 Hosting
-- Development and staging: Vercel Hobby
-- Production for the company: Cloudflare Workers or Pages, or Vercel Pro when the company approves. Vercel Hobby is not allowed for commercial use.
-- Keep the code free of Vercel-only features so hosting can move.
-- Advanced option: Oracle Cloud Always Free VM (more maintenance).
+- Development: Local Next.js on port 4321
+- Staging / Production: Cloudflare Pages / Workers or Vercel Pro (when company approves)
 
 Quality and DevOps
 - GitHub private repo, GitHub Actions, Dependabot, gitleaks
 - Vitest (unit), Playwright (end to end), pgTAP through Supabase CLI (RLS tests)
 - ESLint, Prettier, Husky
-- Supabase CLI for local development and migrations
-- Sentry free tier (errors), UptimeRobot or Better Stack free (uptime)
-- Figma free or draw.io for wireframes
-- Bitwarden free for secure storage of keys and credentials
-- Weekly database backup job through GitHub Actions to separate storage
+- Supabase CLI for migrations and pgTAP RLS test suite
+- Automated weekly database backup job and keep-alive workflow via GitHub Actions
 
 ---
 
@@ -530,14 +588,14 @@ Also missing items to add along the way: teams or departments (bulk add), announ
 
 ---
 
-## 18. Open decisions
+## 18. Status of Key Decisions
 
-1. Final hosting for production (Cloudflare or Vercel Pro).
-2. Files provider for Phase 1 (R2 recommended, or Supabase Storage with small limits).
-3. Email: domain available? Otherwise manual invite links.
-4. Login: email and password only, or also Google or Microsoft sign in.
-5. Retention period for chat and files.
-6. App name and branding.
-7. Notes to self conversation: yes or no.
-8. UI language: English only, or Hindi also.
-9. Task fields beyond priority, due date, labels and assignees (estimate, custom fields).
+1. **Hosting**: Local development on port 4321. Production on Cloudflare Workers/Pages or Vercel Pro.
+2. **Files provider**: Supabase Storage for Phase 1, behind the storage interface for future Cloudflare R2 migration.
+3. **Email provider**: SMTP via Nodemailer supporting Google Workspace / Gmail App Password, with manual copy-link toggle.
+4. **App Name & Branding**: Project Hub, Hydrated Studio. Text mark/SVG icon, editable via Org Settings.
+5. **Personal Space**: Resolved as dedicated `/personal` Sticky Notes space (plain text & checklist, drag & drop, pastel tokens, WCAG AA, strict owner-only RLS).
+6. **Port**: Standardized to `4321`.
+7. **Default Roles**: Admin (locked), Manager and Member (editable permission sets with "Reset to default"). Custom roles visible everywhere.
+8. **Task Assignment**: Granular permissions `task.assign`, `task.self_assign`, `task.assignable`, plus member removal reassignment flow.
+9. **Performance Architecture**: Foreign key indexing, statement-level RLS, RSC parallel fetching, SWR query caching + Realtime invalidation, scoped Upstash Redis.

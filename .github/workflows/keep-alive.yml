@@ -1,0 +1,34 @@
+name: Supabase Keep-Alive Ping
+
+on:
+  schedule:
+    # Run every 3 days at midnight UTC to prevent Supabase free tier pause
+    - cron: '0 0 */3 * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    name: Ping Supabase Database & API
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase Health Endpoint
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ]; then
+            echo "::error::SUPABASE_URL secret is not configured."
+            exit 1
+          fi
+          echo "Sending keep-alive request to $SUPABASE_URL/rest/v1/..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            "$SUPABASE_URL/rest/v1/org_settings?select=company_name&limit=1")
+          echo "Response HTTP status: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 400 ]; then
+            echo "Supabase keep-alive ping successful."
+          else
+            echo "::warning::Unexpected HTTP status $HTTP_STATUS received during keep-alive ping."
+          fi
+
