@@ -31,7 +31,19 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ project });
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('org_role')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    const isAdmin = profile?.org_role === 'Admin';
+
+    return NextResponse.json({
+      project,
+      isAdmin,
+      userRole: profile?.org_role || 'Member',
+    });
   } catch (error: any) {
     return NextResponse.json({ error: 'INTERNAL_ERROR', message: error.message }, { status: 500 });
   }
@@ -60,7 +72,7 @@ export async function PATCH(
       .from('profiles')
       .select('org_role')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
 
     const isAdmin = profile?.org_role === 'Admin';
 

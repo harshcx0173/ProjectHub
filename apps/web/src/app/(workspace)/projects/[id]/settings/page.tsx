@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { DynamicIcon, AVAILABLE_PROJECT_ICONS, AVAILABLE_PROJECT_COLORS } from '@/components/icons/dynamic-icon';
 import { Lock, Save, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
 
 export default function ProjectSettingsPage() {
   const params = useParams();
@@ -32,20 +31,6 @@ export default function ProjectSettingsPage() {
     async function fetchProject() {
       setIsLoading(true);
       try {
-        const supabase = createClient();
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-
-        if (user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('org_role')
-            .eq('id', user.id)
-            .maybeSingle();
-          setIsAdmin(profile?.org_role === 'Admin');
-        }
-
         const res = await fetch(`/api/v1/projects/${projectId}`);
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
@@ -61,6 +46,7 @@ export default function ProjectSettingsPage() {
           return;
         }
 
+        setIsAdmin(Boolean(data.isAdmin));
         setName(project.name);
         setKey(project.key);
         setDescription(project.description || '');
@@ -202,9 +188,11 @@ export default function ProjectSettingsPage() {
                   Icon and color shown in sidebar and headers
                 </CardDescription>
               </div>
-              <Badge variant={isAdmin ? 'default' : 'warning'}>
-                {isAdmin ? 'Admin Editable' : 'Admin Only'}
-              </Badge>
+              {!isAdmin && (
+                <Badge variant="warning">
+                  Admin Only
+                </Badge>
+              )}
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
