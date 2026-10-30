@@ -28,7 +28,7 @@ export async function GET(
         user_id,
         project_role,
         created_at,
-        profiles (
+        profiles!user_id (
           id,
           full_name,
           avatar_url,
