@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
 import { checkUserPermission } from '@/lib/permissions';
 import { recordAuditLog } from '@/lib/audit';
 
@@ -61,7 +60,7 @@ export async function GET(
           id: m.id,
           projectId: m.project_id,
           userId: m.user_id,
-          projectRole: m.project_role,
+          projectRole: m.profiles?.org_role || m.project_role || 'Member',
           fullName: m.profiles?.full_name || 'Member',
           avatarUrl: m.profiles?.avatar_url || null,
           designation: m.profiles?.designation || null,
@@ -73,7 +72,7 @@ export async function GET(
       })
     );
 
-    // Fetch candidate users not yet in this project and all dynamic roles
+    // Fetch candidate users not yet in this project
     const currentMemberIds = (members || []).map((m: any) => m.user_id);
     let availableUsersQuery = supabase
       .from('profiles')
@@ -85,14 +84,7 @@ export async function GET(
       availableUsersQuery = availableUsersQuery.not('id', 'in', `(${currentMemberIds.join(',')})`);
     }
 
-    const [{ data: availableUsers }, { data: availableRoles }] = await Promise.all([
-      availableUsersQuery,
-      supabase
-        .from('roles')
-        .select('id, name, is_system, is_locked, description')
-        .order('is_system', { ascending: false })
-        .order('name', { ascending: true }),
-    ]);
+    const { data: availableUsers } = await availableUsersQuery;
 
     return NextResponse.json({
       members: formatted,
@@ -103,12 +95,6 @@ export async function GET(
         avatarUrl: u.avatar_url || null,
         designation: u.designation || null,
         orgRole: u.org_role || 'Member',
-      })),
-      availableRoles: (availableRoles || []).map((r: any) => ({
-        id: r.id,
-        name: r.name,
-        isSystem: r.is_system,
-        description: r.description,
       })),
     });
   } catch (err: any) {
@@ -139,16 +125,16 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { userId, projectRole = 'Member' } = body;
+    const { userId } = body;
 
     if (!userId) {
       return NextResponse.json({ error: 'VALIDATION_ERROR', message: 'userId is required' }, { status: 400 });
     }
 
-    // Verify user exists and is active
+    // Verify user exists and is active, and retrieve their main organization role
     const { data: targetProfile, error: profileErr } = await supabase
       .from('profiles')
-      .select('id, status')
+      .select('id, status, org_role')
       .eq('id', userId)
       .maybeSingle();
 
@@ -160,16 +146,8 @@ export async function POST(
       return NextResponse.json({ error: 'USER_DISABLED', message: 'Cannot add a disabled user to a project.' }, { status: 400 });
     }
 
-    // Verify role exists
-    const { data: roleExists } = await supabase
-      .from('roles')
-      .select('name')
-      .eq('name', projectRole)
-      .maybeSingle();
-
-    if (!roleExists) {
-      return NextResponse.json({ error: 'INVALID_ROLE', message: `Role '${projectRole}' does not exist.` }, { status: 400 });
-    }
+    // Project role is automatically inherited from the user's main organization role
+    const projectRole = targetProfile.org_role || 'Member';
 
     // Verify if already in project
     const { data: existingMember } = await supabase
@@ -210,73 +188,6 @@ export async function POST(
     });
 
     return NextResponse.json({ member: newMember }, { status: 201 });
-  } catch (err: any) {
-    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR', message: err.message }, { status: 500 });
-  }
-}
-
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id: projectId } = await params;
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
-    }
-
-    const canManageMembers = await checkUserPermission(user.id, 'project.members.manage');
-    if (!canManageMembers) {
-      return NextResponse.json({ error: 'FORBIDDEN', message: 'Missing project.members.manage permission' }, { status: 403 });
-    }
-
-    const body = await request.json();
-    const { userId, projectRole } = body;
-
-    if (!userId || !projectRole) {
-      return NextResponse.json({ error: 'VALIDATION_ERROR', message: 'userId and projectRole are required' }, { status: 400 });
-    }
-
-    // Verify role exists
-    const { data: roleExists } = await supabase
-      .from('roles')
-      .select('name')
-      .eq('name', projectRole)
-      .maybeSingle();
-
-    if (!roleExists) {
-      return NextResponse.json({ error: 'INVALID_ROLE', message: `Role '${projectRole}' does not exist.` }, { status: 400 });
-    }
-
-    const adminSupabase = createAdminClient();
-    const { data: updatedMember, error: updateError } = await adminSupabase
-      .from('project_members')
-      .update({ project_role: projectRole })
-      .eq('project_id', projectId)
-      .eq('user_id', userId)
-      .select()
-      .maybeSingle();
-
-    if (updateError) {
-      return NextResponse.json({ error: 'UPDATE_FAILED', message: updateError.message }, { status: 500 });
-    }
-
-    await recordAuditLog({
-      actorId: user.id,
-      action: 'project.member.role_change',
-      entity: 'project',
-      entityId: projectId,
-      metadata: { targetUserId: userId, newRole: projectRole },
-    });
-
-    return NextResponse.json({ member: updatedMember });
   } catch (err: any) {
     return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR', message: err.message }, { status: 500 });
   }

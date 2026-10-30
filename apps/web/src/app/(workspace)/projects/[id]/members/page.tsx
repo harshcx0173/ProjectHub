@@ -35,13 +35,6 @@ interface CandidateUser {
   orgRole: string;
 }
 
-interface AvailableRole {
-  id: string;
-  name: string;
-  isSystem: boolean;
-  description: string | null;
-}
-
 export default function ProjectMembersPage({
   params,
 }: {
@@ -52,19 +45,14 @@ export default function ProjectMembersPage({
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [canManageMembers, setCanManageMembers] = useState(false);
   const [availableUsers, setAvailableUsers] = useState<CandidateUser[]>([]);
-  const [availableRoles, setAvailableRoles] = useState<AvailableRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Add Member Modal state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
-  const [selectedProjectRole, setSelectedProjectRole] = useState<string>('Member');
   const [submittingAdd, setSubmittingAdd] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
-
-  // Quick Role Change state
-  const [updatingRoleMemberId, setUpdatingRoleMemberId] = useState<string | null>(null);
 
   // Removal & task reassignment modal state
   const [removingMember, setRemovingMember] = useState<ProjectMember | null>(null);
@@ -83,7 +71,6 @@ export default function ProjectMembersPage({
       setMembers(data.members || []);
       setCanManageMembers(Boolean(data.canManageMembers));
       setAvailableUsers(data.availableUsers || []);
-      setAvailableRoles(data.availableRoles || []);
 
       if (data.availableUsers && data.availableUsers.length > 0 && !selectedUserId) {
         setSelectedUserId(data.availableUsers[0].id);
@@ -108,7 +95,6 @@ export default function ProjectMembersPage({
     } else {
       setSelectedUserId('');
     }
-    setSelectedProjectRole('Member');
     setIsAddModalOpen(true);
   };
 
@@ -128,7 +114,6 @@ export default function ProjectMembersPage({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: selectedUserId,
-          projectRole: selectedProjectRole,
         }),
       });
 
@@ -143,33 +128,6 @@ export default function ProjectMembersPage({
       setAddError(err.message);
     } finally {
       setSubmittingAdd(false);
-    }
-  };
-
-  const handleRoleChange = async (targetUserId: string, newRole: string) => {
-    setUpdatingRoleMemberId(targetUserId);
-    setError(null);
-
-    try {
-      const res = await fetch(`/api/v1/projects/${projectId}/members`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: targetUserId,
-          projectRole: newRole,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || 'Failed to update member role.');
-      }
-
-      await fetchMembers();
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setUpdatingRoleMemberId(null);
     }
   };
 
@@ -220,6 +178,8 @@ export default function ProjectMembersPage({
   const otherEligibleMembers = members.filter(
     (m) => removingMember && m.userId !== removingMember.userId && m.isAssignable
   );
+
+  const selectedCandidate = availableUsers.find((u) => u.id === selectedUserId);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden p-6 max-w-4xl mx-auto w-full space-y-6">
@@ -295,32 +255,10 @@ export default function ProjectMembersPage({
                 </div>
 
                 <div className="flex items-center gap-3">
-                  {canManageMembers ? (
-                    <div className="relative">
-                      <select
-                        value={m.projectRole}
-                        onChange={(e) => handleRoleChange(m.userId, e.target.value)}
-                        disabled={updatingRoleMemberId === m.userId}
-                        title="Change project role"
-                        aria-label={`Change role for ${m.fullName}`}
-                        className="text-[11px] font-semibold pl-2.5 pr-6 py-1 rounded-full bg-gray-100 hover:bg-gray-200/80 border border-transparent focus:border-primary text-gray-700 outline-none cursor-pointer appearance-none transition-colors"
-                      >
-                        {availableRoles.map((r) => (
-                          <option key={r.id} value={r.name}>
-                            {r.name}
-                          </option>
-                        ))}
-                      </select>
-                      {updatingRoleMemberId === m.userId && (
-                        <Loader2 className="h-3 w-3 animate-spin absolute right-2 top-1.5 text-gray-500" />
-                      )}
-                    </div>
-                  ) : (
-                    <span className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-gray-100 text-gray-700">
-                      <Shield className="h-3 w-3 text-primary" />
-                      {m.projectRole}
-                    </span>
-                  )}
+                  <span className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 border border-gray-200/60">
+                    <Shield className="h-3 w-3 text-primary" />
+                    {m.projectRole || m.orgRole}
+                  </span>
 
                   {canManageMembers && (
                     <button
@@ -361,7 +299,7 @@ export default function ProjectMembersPage({
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-gray-900">Add Project Member</h3>
-                  <p className="text-[11px] text-gray-500">Grant an organization member access to this project.</p>
+                  <p className="text-[11px] text-gray-500">Add an active organization member to this project.</p>
                 </div>
               </div>
               <button
@@ -417,27 +355,15 @@ export default function ProjectMembersPage({
                   </select>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label htmlFor="select-role" className="block text-xs font-semibold text-gray-700">
-                    Project Role Picker
-                  </label>
-                  <select
-                    id="select-role"
-                    value={selectedProjectRole}
-                    onChange={(e) => setSelectedProjectRole(e.target.value)}
-                    required
-                    className="w-full text-xs rounded-xl border border-border bg-white px-3 py-2 text-gray-900 outline-none focus:border-primary shadow-2xs"
-                  >
-                    {availableRoles.map((r) => (
-                      <option key={r.id} value={r.name}>
-                        {r.name} {r.isSystem ? '' : '(Custom)'}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[11px] text-gray-400">
-                    Role defines their permissions within this project.
-                  </p>
-                </div>
+                {selectedCandidate && (
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100 text-xs">
+                    <span className="text-gray-500 font-medium">Role:</span>
+                    <span className="font-semibold text-gray-800 flex items-center gap-1.5">
+                      <Shield className="h-3.5 w-3.5 text-primary" />
+                      {selectedCandidate.orgRole}
+                    </span>
+                  </div>
+                )}
 
                 <div className="flex items-center justify-end gap-2.5 pt-2">
                   <button
