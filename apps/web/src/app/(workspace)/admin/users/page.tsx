@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { AlertCircle, Search, UserMinus } from 'lucide-react';
+import { AlertCircle, Search, UserMinus, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function AdminUsersPage() {
@@ -17,6 +17,7 @@ export default function AdminUsersPage() {
   const [reassignOption, setReassignOption] = useState<'reassign' | 'unassign'>('reassign');
   const [selectedAssigneeId, setSelectedAssigneeId] = useState<string>('');
   const [submittingOffboarding, setSubmittingOffboarding] = useState(false);
+  const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
 
   const fetchUsers = async () => {
     try {
@@ -85,6 +86,7 @@ export default function AdminUsersPage() {
     nextStatus: string,
     reassignData?: { reassignToUserId?: string; unassignTasks?: boolean }
   ) => {
+    setTogglingUserId(userId);
     try {
       const res = await fetch('/api/v1/admin/users', {
         method: 'PATCH',
@@ -106,6 +108,8 @@ export default function AdminUsersPage() {
       await fetchUsers();
     } catch {
       alert('Network error while updating status');
+    } finally {
+      setTogglingUserId(null);
     }
   };
 
@@ -270,13 +274,17 @@ export default function AdminUsersPage() {
                   <button
                     type="button"
                     onClick={() => handleClickStatusToggle(u)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                    disabled={togglingUserId === u.id}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 ${
                       u.status === 'active'
                         ? 'text-red-600 hover:bg-red-50'
                         : 'text-emerald-600 hover:bg-emerald-50'
                     }`}
                   >
-                    {u.status === 'active' ? 'Disable' : 'Activate'}
+                    {togglingUserId === u.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : null}
+                    <span>{u.status === 'active' ? 'Disable' : 'Activate'}</span>
                   </button>
                 </td>
               </tr>
@@ -386,9 +394,16 @@ export default function AdminUsersPage() {
                 <button
                   type="submit"
                   disabled={submittingOffboarding || (reassignOption === 'reassign' && !selectedAssigneeId)}
-                  className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors disabled:opacity-50"
                 >
-                  {submittingOffboarding ? 'Offboarding...' : 'Confirm Offboarding'}
+                  {submittingOffboarding ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Offboarding...</span>
+                    </>
+                  ) : (
+                    <span>Confirm Offboarding</span>
+                  )}
                 </button>
               </div>
             </form>

@@ -27,6 +27,7 @@ import {
   Link as LinkIcon,
   X,
   LucideIcon,
+  Loader2,
 } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { format } from 'date-fns';
@@ -54,6 +55,7 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
   const [inputText, setInputText] = useState('');
   const [recording, setRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [sending, setSending] = useState(false);
   const [activeReactionMsgId, setActiveReactionMsgId] = useState<string | null>(null);
 
   // Search & Filter
@@ -186,8 +188,9 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!inputText.trim() || !channelId) return;
+    if (!inputText.trim() || !channelId || sending) return;
 
+    setSending(true);
     const text = inputText;
     const parentId = replyingTo ? replyingTo.id : null;
 
@@ -208,6 +211,8 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setSending(false);
     }
   };
 
@@ -881,10 +886,10 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
 
             <button
               type="submit"
-              disabled={!inputText.trim()}
-              className="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors disabled:opacity-40"
+              disabled={!inputText.trim() || sending}
+              className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors disabled:opacity-40"
             >
-              <Send className="h-3 w-3" />
+              {sending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
             </button>
           </div>
         </form>

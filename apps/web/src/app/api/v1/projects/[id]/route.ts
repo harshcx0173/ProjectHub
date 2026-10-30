@@ -37,7 +37,8 @@ export async function GET(
       .eq('id', user.id)
       .maybeSingle();
 
-    const isAdmin = profile?.org_role === 'Admin';
+    const isAdmin =
+      profile?.org_role?.toLowerCase() === 'admin' || profile?.org_role === 'Admin';
 
     return NextResponse.json({
       project,
@@ -74,7 +75,8 @@ export async function PATCH(
       .eq('id', user.id)
       .maybeSingle();
 
-    const isAdmin = profile?.org_role === 'Admin';
+    const isAdmin =
+      profile?.org_role?.toLowerCase() === 'admin' || profile?.org_role === 'Admin';
 
     // If request contains admin-only fields, check admin rights
     const hasAdminFields =

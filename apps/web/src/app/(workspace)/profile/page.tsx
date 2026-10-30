@@ -13,6 +13,7 @@ import {
   Lock,
   Copy,
   FileText,
+  Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { sanitizeAndResizeAvatar } from '@/lib/image-processing';
@@ -324,9 +325,10 @@ export default function ProfilePage() {
             <button
               type="submit"
               disabled={saving}
-              className="px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors disabled:opacity-50"
             >
-              {saving ? 'Saving...' : 'Save Profile'}
+              {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              <span>{saving ? 'Saving...' : 'Save Profile'}</span>
             </button>
           </div>
         </form>
@@ -383,10 +385,14 @@ export default function ProfilePage() {
                   type="button"
                   onClick={handleFetchRecoveryCodes}
                   disabled={loadingCodes}
-                  className="px-3 py-1.5 rounded-lg border border-border hover:bg-gray-50 text-xs font-semibold text-gray-700 transition-colors flex items-center gap-1.5"
+                  className="px-3 py-1.5 rounded-lg border border-border hover:bg-gray-50 text-xs font-semibold text-gray-700 transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
                 >
-                  <FileText className="h-3.5 w-3.5 text-gray-500" />
-                  {loadingCodes ? 'Loading...' : 'Recovery Codes'}
+                  {loadingCodes ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-500" />
+                  ) : (
+                    <FileText className="h-3.5 w-3.5 text-gray-500" />
+                  )}
+                  <span>{loadingCodes ? 'Loading...' : 'Recovery Codes'}</span>
                 </button>
               )}
             </div>
@@ -411,10 +417,14 @@ export default function ProfilePage() {
             type="button"
             onClick={handleRevokeOtherSessions}
             disabled={revoking}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold transition-colors disabled:opacity-50"
           >
-            <LogOut className="h-3.5 w-3.5" />
-            {revoking ? 'Revoking...' : 'Sign Out Other Sessions'}
+            {revoking ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <LogOut className="h-3.5 w-3.5" />
+            )}
+            <span>{revoking ? 'Revoking...' : 'Sign Out Other Sessions'}</span>
           </button>
         </div>
 
@@ -517,9 +527,10 @@ export default function ProfilePage() {
                 <button
                   type="submit"
                   disabled={changingPassword}
-                  className="px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
-                  {changingPassword ? 'Updating...' : 'Update Password'}
+                  {changingPassword && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  <span>{changingPassword ? 'Updating...' : 'Update Password'}</span>
                 </button>
               </div>
             </form>

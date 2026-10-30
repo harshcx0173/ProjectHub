@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Bell, CheckCheck, MessageSquare, CheckSquare, UserPlus, Info } from 'lucide-react';
+import { Bell, CheckCheck, MessageSquare, CheckSquare, UserPlus, Info, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [markingRead, setMarkingRead] = useState(false);
 
   const fetchNotifications = async () => {
     try {
@@ -26,6 +27,8 @@ export default function NotificationsPage() {
   }, []);
 
   const handleMarkAllRead = async () => {
+    if (markingRead) return;
+    setMarkingRead(true);
     try {
       await fetch('/api/v1/notifications', {
         method: 'PATCH',
@@ -35,6 +38,8 @@ export default function NotificationsPage() {
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
     } catch (err) {
       console.error(err);
+    } finally {
+      setMarkingRead(false);
     }
   };
 
@@ -67,10 +72,15 @@ export default function NotificationsPage() {
         <button
           type="button"
           onClick={handleMarkAllRead}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-white hover:bg-gray-50 text-xs font-semibold text-gray-700 shadow-subtle transition-colors"
+          disabled={markingRead || notifications.every((n) => n.is_read)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-white hover:bg-gray-50 text-xs font-semibold text-gray-700 shadow-subtle transition-colors disabled:opacity-50 cursor-pointer"
         >
-          <CheckCheck className="h-3.5 w-3.5 text-primary" />
-          Mark all as read
+          {markingRead ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+          ) : (
+            <CheckCheck className="h-3.5 w-3.5 text-primary" />
+          )}
+          <span>{markingRead ? 'Updating...' : 'Mark all as read'}</span>
         </button>
       </div>
 

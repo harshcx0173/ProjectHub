@@ -11,6 +11,7 @@ import {
   Calendar,
   AlertCircle,
   FolderOpen,
+  Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -125,10 +126,10 @@ export default function ProjectFilesPage({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors disabled:opacity-50"
           >
-            <Upload className="h-4 w-4" />
-            {uploading ? 'Uploading...' : 'Upload File'}
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            <span>{uploading ? 'Uploading...' : 'Upload File'}</span>
           </button>
         </div>
       </div>

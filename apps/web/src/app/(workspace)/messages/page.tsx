@@ -11,7 +11,6 @@ import {
   Check,
   X,
   Loader2,
-  Clock,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -74,6 +73,8 @@ export default function MessagesPage() {
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [modalError, setModalError] = useState<string | null>(null);
+  const [startingChatUserId, setStartingChatUserId] = useState<string | null>(null);
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -203,6 +204,8 @@ export default function MessagesPage() {
 
   // Start 1v1 Direct Message
   const handleStartDirectMessage = async (targetUserId: string) => {
+    if (startingChatUserId) return;
+    setStartingChatUserId(targetUserId);
     try {
       const res = await fetch('/api/v1/messages/conversations', {
         method: 'POST',
@@ -217,17 +220,20 @@ export default function MessagesPage() {
       fetchConversations(data.conversationId);
     } catch (err: any) {
       setModalError(err.message);
+    } finally {
+      setStartingChatUserId(null);
     }
   };
 
   // Create Teams-style Group Chat
   const handleCreateGroupChat = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newGroupName.trim() || selectedMemberIds.length === 0) {
+    if (!newGroupName.trim() || selectedMemberIds.length === 0 || isCreatingGroup) {
       setModalError('Please provide a group name and select at least one member.');
       return;
     }
 
+    setIsCreatingGroup(true);
     try {
       const res = await fetch('/api/v1/messages/conversations', {
         method: 'POST',
@@ -248,6 +254,8 @@ export default function MessagesPage() {
       fetchConversations(data.conversationId);
     } catch (err: any) {
       setModalError(err.message);
+    } finally {
+      setIsCreatingGroup(false);
     }
   };
 
@@ -508,7 +516,7 @@ export default function MessagesPage() {
                 disabled={!inputMessage.trim() || sending}
                 className="p-2 rounded-xl bg-primary hover:bg-primary/90 text-white disabled:opacity-40 transition-colors shadow-subtle shrink-0"
               >
-                {sending ? <Clock className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </button>
             </form>
           </>
@@ -612,8 +620,9 @@ export default function MessagesPage() {
                           <button
                             key={u.id}
                             type="button"
+                            disabled={Boolean(startingChatUserId)}
                             onClick={() => handleStartDirectMessage(u.id)}
-                            className="w-full p-2.5 text-left flex items-center justify-between hover:bg-gray-50 transition-colors"
+                            className="w-full p-2.5 text-left flex items-center justify-between hover:bg-gray-50 transition-colors disabled:opacity-50"
                           >
                             <div className="flex items-center gap-2.5">
                               <div className="h-7 w-7 rounded-lg bg-primary/10 text-primary font-bold text-xs flex items-center justify-center">
@@ -624,7 +633,11 @@ export default function MessagesPage() {
                                 <p className="text-[10px] text-gray-400">{u.orgRole}</p>
                               </div>
                             </div>
-                            <span className="text-[11px] font-semibold text-primary">Chat</span>
+                            {startingChatUserId === u.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                            ) : (
+                              <span className="text-[11px] font-semibold text-primary">Chat</span>
+                            )}
                           </button>
                         ))
                     )}
@@ -690,11 +703,20 @@ export default function MessagesPage() {
                     </button>
                     <button
                       type="submit"
-                      disabled={!newGroupName.trim() || selectedMemberIds.length === 0}
-                      className="px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle disabled:opacity-40 transition-colors flex items-center gap-1.5"
+                      disabled={!newGroupName.trim() || selectedMemberIds.length === 0 || isCreatingGroup}
+                      className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle disabled:opacity-40 transition-colors"
                     >
-                      <Check className="h-3.5 w-3.5" />
-                      <span>Create Group</span>
+                      {isCreatingGroup ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span>Creating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="h-3.5 w-3.5" />
+                          <span>Create Group</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>

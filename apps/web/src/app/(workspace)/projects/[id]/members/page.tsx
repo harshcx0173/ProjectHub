@@ -496,7 +496,10 @@ export default function ProjectMembersPage({
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-red-600 text-white hover:bg-red-700 shadow-subtle transition-colors cursor-pointer disabled:opacity-50"
               >
                 {submittingRemove ? (
-                  <span>Removing...</span>
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Removing...</span>
+                  </>
                 ) : (
                   <>
                     <span>Confirm Removal</span>

@@ -32,6 +32,7 @@ export default function AdminInvitationsPage() {
   const [testEmail, setTestEmail] = useState('');
   const [testingSmtp, setTestingSmtp] = useState(false);
   const [testResult, setTestResult] = useState<{ success?: boolean; message?: string } | null>(null);
+  const [actioningInvId, setActioningInvId] = useState<string | null>(null);
 
   const fetchInvitationsAndRoles = async () => {
     try {
@@ -94,6 +95,7 @@ export default function AdminInvitationsPage() {
   const handleResend = async (id: string) => {
     setError(null);
     setEmailStatus(null);
+    setActioningInvId(id);
     try {
       const res = await fetch('/api/v1/invitations', {
         method: 'PATCH',
@@ -110,6 +112,8 @@ export default function AdminInvitationsPage() {
       await fetchInvitationsAndRoles();
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setActioningInvId(null);
     }
   };
 
@@ -122,13 +126,15 @@ export default function AdminInvitationsPage() {
 
   const handleRevoke = async (id: string) => {
     if (!confirm('Are you sure you want to revoke this invitation?')) return;
-
+    setActioningInvId(id);
     try {
       const res = await fetch(`/api/v1/invitations?id=${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to revoke invitation');
       await fetchInvitationsAndRoles();
     } catch (err: any) {
       alert(err.message);
+    } finally {
+      setActioningInvId(null);
     }
   };
 
@@ -327,19 +333,29 @@ export default function AdminInvitationsPage() {
                   <button
                     type="button"
                     onClick={() => handleResend(inv.id)}
+                    disabled={actioningInvId === inv.id}
                     title="Resend invitation email"
-                    className="p-1 text-gray-400 hover:text-primary rounded hover:bg-gray-100 transition-colors inline-flex items-center gap-1 text-[11px] font-medium cursor-pointer"
+                    className="p-1 text-gray-400 hover:text-primary rounded hover:bg-gray-100 transition-colors inline-flex items-center gap-1 text-[11px] font-medium cursor-pointer disabled:opacity-50"
                   >
-                    <RotateCcw className="h-3.5 w-3.5" />
+                    {actioningInvId === inv.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    )}
                     <span className="hidden sm:inline">Resend</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleRevoke(inv.id)}
+                    disabled={actioningInvId === inv.id}
                     title="Revoke invitation"
-                    className="p-1 text-gray-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors inline-flex items-center gap-1 text-[11px] font-medium cursor-pointer"
+                    className="p-1 text-gray-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors inline-flex items-center gap-1 text-[11px] font-medium cursor-pointer disabled:opacity-50"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    {actioningInvId === inv.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3.5 w-3.5" />
+                    )}
                     <span className="hidden sm:inline">Revoke</span>
                   </button>
                 </td>

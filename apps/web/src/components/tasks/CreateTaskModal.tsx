@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, AlertCircle, Users } from 'lucide-react';
+import { X, Calendar, AlertCircle, Users, Loader2 } from 'lucide-react';
 import { TaskStatus } from './KanbanColumn';
 
 interface MemberOption {
@@ -285,9 +285,10 @@ export function CreateTaskModal({
             <button
               type="submit"
               disabled={loading || !title.trim()}
-              className="px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors disabled:opacity-50"
             >
-              {loading ? 'Creating...' : 'Create Task'}
+              {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              <span>{loading ? 'Creating...' : 'Create Task'}</span>
             </button>
           </div>
         </form>

@@ -161,3 +161,4 @@ create policy "Senders can edit their own messages"
 on public.conversation_messages for update
 using (sender_id = auth.uid())
 with check (sender_id = auth.uid());
+

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Shield, Lock, Plus, Check, AlertCircle, RotateCcw, Edit2, Trash2, Users, X } from 'lucide-react';
+import { Shield, Lock, Plus, Check, AlertCircle, RotateCcw, Edit2, Trash2, Users, X, Loader2 } from 'lucide-react';
 
 interface RoleItem {
   id: string;
@@ -461,16 +461,25 @@ export default function AdminRolesPage() {
                 <button
                   type="button"
                   onClick={() => setEditingRole(null)}
-                  className="px-3 py-1.5 rounded-lg border border-border bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                  disabled={savingEdit}
+                  className="px-3 py-1.5 rounded-lg border border-border bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowConfirmModal(true)}
-                  className="px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors"
+                  onClick={handleSaveRolePermissions}
+                  disabled={savingEdit}
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors disabled:opacity-50"
                 >
-                  Save Changes
+                  {savingEdit ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Saving Changes...</span>
+                    </>
+                  ) : (
+                    <span>Save Changes</span>
+                  )}
                 </button>
               </div>
             </div>
@@ -553,7 +562,7 @@ export default function AdminRolesPage() {
                 type="button"
                 onClick={() => setResettingRole(null)}
                 disabled={submittingReset}
-                className="px-3 py-1.5 rounded-lg border border-border bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                className="px-3 py-1.5 rounded-lg border border-border bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -561,9 +570,16 @@ export default function AdminRolesPage() {
                 type="button"
                 onClick={handleConfirmResetDefault}
                 disabled={submittingReset}
-                className="px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors disabled:opacity-50"
               >
-                {submittingReset ? 'Resetting...' : 'Confirm Reset'}
+                {submittingReset ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Resetting...</span>
+                  </>
+                ) : (
+                  <span>Confirm Reset</span>
+                )}
               </button>
             </div>
           </div>
@@ -689,9 +705,16 @@ export default function AdminRolesPage() {
                 <button
                   type="submit"
                   disabled={submittingCreate || !newRoleName.trim()}
-                  className="px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors disabled:opacity-50"
                 >
-                  {submittingCreate ? 'Creating Role...' : 'Create Custom Role'}
+                  {submittingCreate ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Creating Role...</span>
+                    </>
+                  ) : (
+                    <span>Create Custom Role</span>
+                  )}
                 </button>
               </div>
             </form>

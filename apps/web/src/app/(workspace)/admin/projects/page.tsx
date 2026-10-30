@@ -18,6 +18,7 @@ import {
   Terminal,
   Shield,
   LucideIcon,
+  Loader2,
 } from 'lucide-react';
 
 const AVAILABLE_ICONS: Record<string, LucideIcon> = {
@@ -56,6 +57,7 @@ export default function AdminProjectsPage() {
   const [editIcon, setEditIcon] = useState('folder');
   const [editColor, setEditColor] = useState('#2563EB');
   const [saving, setSaving] = useState(false);
+  const [togglingArchiveId, setTogglingArchiveId] = useState<string | null>(null);
 
   const fetchProjects = async () => {
     try {
@@ -125,6 +127,7 @@ export default function AdminProjectsPage() {
 
     if (!confirm(confirmMsg)) return;
 
+    setTogglingArchiveId(proj.id);
     try {
       const res = await fetch(`/api/v1/projects/${proj.id}`, {
         method: 'PATCH',
@@ -144,6 +147,8 @@ export default function AdminProjectsPage() {
       await fetchProjects();
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message });
+    } finally {
+      setTogglingArchiveId(null);
     }
   };
 
@@ -285,14 +290,17 @@ export default function AdminProjectsPage() {
                           <button
                             type="button"
                             onClick={() => handleToggleArchive(proj)}
-                            className={`p-1.5 rounded-lg border transition-colors ${
+                            disabled={togglingArchiveId === proj.id}
+                            className={`p-1.5 rounded-lg border transition-colors disabled:opacity-50 ${
                               proj.is_archived
                                 ? 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
                                 : 'border-amber-200 text-amber-600 hover:bg-amber-50'
                             }`}
                             title={proj.is_archived ? 'Restore project' : 'Archive project'}
                           >
-                            {proj.is_archived ? (
+                            {togglingArchiveId === proj.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : proj.is_archived ? (
                               <RotateCcw className="h-3.5 w-3.5" />
                             ) : (
                               <Archive className="h-3.5 w-3.5" />
@@ -393,9 +401,10 @@ export default function AdminProjectsPage() {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
-                  {saving ? 'Saving...' : 'Save Changes'}
+                  {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  <span>{saving ? 'Saving...' : 'Save Changes'}</span>
                 </button>
               </div>
             </form>

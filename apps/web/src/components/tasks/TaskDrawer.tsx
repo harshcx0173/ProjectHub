@@ -14,6 +14,7 @@ import {
   Eye,
   Tag,
   Users,
+  Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { TaskStatus } from './KanbanColumn';
@@ -54,6 +55,13 @@ export function TaskDrawer({
   const [newComment, setNewComment] = useState('');
   const [newChecklistTitle, setNewChecklistTitle] = useState('');
   const [conflictError, setConflictError] = useState<string | null>(null);
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [deletingTask, setDeletingTask] = useState(false);
+  const [addingChecklist, setAddingChecklist] = useState(false);
+  const [actioningChecklistId, setActioningChecklistId] = useState<string | null>(null);
+  const [actioningLabelId, setActioningLabelId] = useState<string | null>(null);
+  const [togglingWatch, setTogglingWatch] = useState(false);
+  const [attachingLabel, setAttachingLabel] = useState(false);
 
   // Watchers & Labels state
   const [isWatching, setIsWatching] = useState(false);
@@ -130,7 +138,8 @@ export function TaskDrawer({
   }, [taskId]);
 
   const handleToggleWatch = async () => {
-    if (!taskId) return;
+    if (!taskId || togglingWatch) return;
+    setTogglingWatch(true);
     try {
       const res = await fetch(`/api/v1/tasks/${taskId}/watchers`, { method: 'POST' });
       const data = await res.json();
@@ -138,11 +147,14 @@ export function TaskDrawer({
       setWatcherCount((prev) => (data.isWatching ? prev + 1 : Math.max(0, prev - 1)));
     } catch (err) {
       console.error(err);
+    } finally {
+      setTogglingWatch(false);
     }
   };
 
   const handleAttachLabel = async (labelId?: string, name?: string) => {
-    if (!taskId) return;
+    if (!taskId || attachingLabel) return;
+    setAttachingLabel(true);
     try {
       const res = await fetch(`/api/v1/tasks/${taskId}/labels`, {
         method: 'POST',
@@ -161,17 +173,22 @@ export function TaskDrawer({
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setAttachingLabel(false);
     }
   };
 
   const handleDetachLabel = async (labelId: string) => {
-    if (!taskId) return;
+    if (!taskId || actioningLabelId) return;
+    setActioningLabelId(labelId);
     try {
       await fetch(`/api/v1/tasks/${taskId}/labels?labelId=${labelId}`, { method: 'DELETE' });
       setAttachedLabels((prev) => prev.filter((l) => l.id !== labelId));
       onTaskUpdated();
     } catch (err) {
       console.error(err);
+    } finally {
+      setActioningLabelId(null);
     }
   };
 
@@ -256,8 +273,9 @@ export function TaskDrawer({
 
   const handleAddChecklistItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newChecklistTitle.trim()) return;
+    if (!newChecklistTitle.trim() || addingChecklist) return;
 
+    setAddingChecklist(true);
     try {
       const res = await fetch(`/api/v1/tasks/${task.id}/checklist`, {
         method: 'POST',
@@ -276,10 +294,14 @@ export function TaskDrawer({
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setAddingChecklist(false);
     }
   };
 
   const handleDeleteChecklistItem = async (itemId: string) => {
+    if (actioningChecklistId) return;
+    setActioningChecklistId(itemId);
     try {
       await fetch(`/api/v1/tasks/${task.id}/checklist?itemId=${itemId}`, {
         method: 'DELETE',
@@ -292,13 +314,16 @@ export function TaskDrawer({
       onTaskUpdated();
     } catch (err) {
       console.error(err);
+    } finally {
+      setActioningChecklistId(null);
     }
   };
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newComment.trim()) return;
+    if (!newComment.trim() || submittingComment) return;
 
+    setSubmittingComment(true);
     try {
       const res = await fetch(`/api/v1/tasks/${task.id}/comments`, {
         method: 'POST',
@@ -317,6 +342,8 @@ export function TaskDrawer({
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setSubmittingComment(false);
     }
   };
 
@@ -325,6 +352,7 @@ export function TaskDrawer({
       return;
     }
 
+    setDeletingTask(true);
     try {
       const res = await fetch(`/api/v1/tasks/${task.id}`, {
         method: 'DELETE',
@@ -339,6 +367,8 @@ export function TaskDrawer({
       }
     } catch {
       alert('Network error while deleting task');
+    } finally {
+      setDeletingTask(false);
     }
   };
 
@@ -362,25 +392,35 @@ export function TaskDrawer({
           <button
             type="button"
             onClick={handleToggleWatch}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+            disabled={togglingWatch}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors disabled:opacity-50 ${
               isWatching
                 ? 'bg-primary/10 border-primary text-primary'
                 : 'border-border text-gray-600 hover:bg-gray-100'
             }`}
             title={isWatching ? 'Stop watching' : 'Watch this task'}
           >
-            <Eye className="h-3.5 w-3.5" />
+            {togglingWatch ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Eye className="h-3.5 w-3.5" />
+            )}
             <span>{isWatching ? 'Watching' : 'Watch'}</span>
             <span className="text-[10px] opacity-75">({watcherCount})</span>
           </button>
           <button
             type="button"
             onClick={handleDeleteTask}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            disabled={deletingTask}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
             title="Delete task"
             aria-label="Delete task"
           >
-            <Trash2 className="h-4 w-4" />
+            {deletingTask ? (
+              <Loader2 className="h-4 w-4 animate-spin text-red-600" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
           </button>
           <button
             type="button"
@@ -455,9 +495,14 @@ export function TaskDrawer({
                   <button
                     type="button"
                     onClick={() => handleDetachLabel(lbl.id)}
-                    className="hover:opacity-75"
+                    disabled={actioningLabelId === lbl.id}
+                    className="hover:opacity-75 disabled:opacity-50"
                   >
-                    <X className="h-2.5 w-2.5" />
+                    {actioningLabelId === lbl.id ? (
+                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                    ) : (
+                      <X className="h-2.5 w-2.5" />
+                    )}
                   </button>
                 </span>
               ))}
@@ -496,11 +541,12 @@ export function TaskDrawer({
                   />
                   <button
                     type="button"
-                    disabled={!newLabelName.trim()}
+                    disabled={!newLabelName.trim() || attachingLabel}
                     onClick={() => handleAttachLabel(undefined, newLabelName.trim())}
-                    className="px-2.5 py-1 bg-primary text-white rounded text-xs font-semibold disabled:opacity-50"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-primary text-white rounded text-xs font-semibold disabled:opacity-50"
                   >
-                    Create
+                    {attachingLabel && <Loader2 className="h-3 w-3 animate-spin" />}
+                    <span>Create</span>
                   </button>
                 </div>
               </div>
@@ -706,10 +752,15 @@ export function TaskDrawer({
                   <button
                     type="button"
                     onClick={() => handleDeleteChecklistItem(item.id)}
-                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600 transition-opacity p-0.5"
+                    disabled={actioningChecklistId === item.id}
+                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600 transition-opacity p-0.5 disabled:opacity-50"
                     title="Remove item"
                   >
-                    <X className="h-3 w-3" />
+                    {actioningChecklistId === item.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin text-gray-400" />
+                    ) : (
+                      <X className="h-3 w-3" />
+                    )}
                   </button>
                 </div>
               ))}
@@ -726,10 +777,15 @@ export function TaskDrawer({
               />
               <button
                 type="submit"
-                className="px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium flex items-center gap-1 transition-colors"
+                disabled={addingChecklist || !newChecklistTitle.trim()}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium transition-colors disabled:opacity-50"
               >
-                <Plus className="h-3 w-3" />
-                Add
+                {addingChecklist ? (
+                  <Loader2 className="h-3 w-3 animate-spin text-gray-600" />
+                ) : (
+                  <Plus className="h-3 w-3" />
+                )}
+                <span>Add</span>
               </button>
             </form>
           </div>
@@ -797,9 +853,15 @@ export function TaskDrawer({
                   />
                   <button
                     type="submit"
-                    className="px-3 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-medium flex items-center gap-1 shadow-subtle transition-colors"
+                    disabled={submittingComment || !newComment.trim()}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-medium shadow-subtle transition-colors disabled:opacity-50"
                   >
-                    <Send className="h-3 w-3" />
+                    {submittingComment ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Send className="h-3 w-3" />
+                    )}
+                    <span>{submittingComment ? 'Sending...' : 'Send'}</span>
                   </button>
                 </form>
               </div>

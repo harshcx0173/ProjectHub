@@ -16,6 +16,7 @@ import {
   Check,
   Pin,
   ExternalLink,
+  Loader2,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -33,6 +34,8 @@ export default function PersonalSpacePage() {
   const [error, setError] = useState<string | null>(null);
   const [taskConvertedAlert, setTaskConvertedAlert] = useState<{ taskId: string; projectId: string } | null>(null);
   const [noteToConvert, setNoteToConvert] = useState<PersonalNote | null>(null);
+  const [isCreatingNote, setIsCreatingNote] = useState(false);
+  const [isEmptyingTrash, setIsEmptyingTrash] = useState(false);
 
   // Storage key helper
   const getStorageKey = () => `project_hub_personal_notes`;
@@ -138,6 +141,8 @@ export default function PersonalSpacePage() {
 
   // Handle Note Creation
   const handleCreateNote = async () => {
+    if (isCreatingNote) return;
+    setIsCreatingNote(true);
     setSaveStatus('saving');
     const newNoteTemplate: Partial<PersonalNote> = {
       title: '',
@@ -203,6 +208,8 @@ export default function PersonalSpacePage() {
       setNotes(updatedNotes);
       localStorage.setItem(getStorageKey(), JSON.stringify(updatedNotes));
       setSaveStatus('offline');
+    } finally {
+      setIsCreatingNote(false);
     }
   };
 
@@ -262,12 +269,18 @@ export default function PersonalSpacePage() {
   // Empty Trash Action
   const handleEmptyTrash = async () => {
     if (!confirm('Are you sure you want to permanently delete all items in Trash?')) return;
+    if (isEmptyingTrash) return;
+    setIsEmptyingTrash(true);
     const trashIds = notes.map((n) => n.id);
     setNotes([]);
     localStorage.setItem(getStorageKey(), JSON.stringify([]));
 
-    for (const id of trashIds) {
-      await fetch(`/api/v1/personal/notes/${id}`, { method: 'DELETE' }).catch(() => {});
+    try {
+      for (const id of trashIds) {
+        await fetch(`/api/v1/personal/notes/${id}`, { method: 'DELETE' }).catch(() => {});
+      }
+    } finally {
+      setIsEmptyingTrash(false);
     }
   };
 
@@ -324,11 +337,16 @@ export default function PersonalSpacePage() {
             {/* Coral Add Note Button (Master Plan Requirement: #FF6B6B / #F97066 with Plus icon) */}
             <button
               onClick={handleCreateNote}
+              disabled={isCreatingNote}
               title="Create new sticky note (Hotkey: N)"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#F97066] hover:bg-[#F05252] text-white text-xs font-semibold shadow-md transition-all duration-150 transform active:scale-95"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#F97066] hover:bg-[#F05252] text-white text-xs font-semibold shadow-md transition-all duration-150 transform active:scale-95 disabled:opacity-50"
             >
-              <Plus className="h-4 w-4" />
-              <span>New Note</span>
+              {isCreatingNote ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
+              <span>{isCreatingNote ? 'Creating...' : 'New Note'}</span>
               <kbd className="hidden md:inline-block ml-1 px-1.5 py-0.5 text-[10px] bg-white/20 rounded font-mono">
                 N
               </kbd>
@@ -505,10 +523,15 @@ export default function PersonalSpacePage() {
             {tab === 'active' && (
               <button
                 onClick={handleCreateNote}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#F97066] hover:bg-[#F05252] text-white text-xs font-semibold shadow-md transition-colors"
+                disabled={isCreatingNote}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#F97066] hover:bg-[#F05252] text-white text-xs font-semibold shadow-md transition-colors disabled:opacity-50"
               >
-                <Plus className="h-4 w-4" />
-                <span>Create Your First Note</span>
+                {isCreatingNote ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}
+                <span>{isCreatingNote ? 'Creating...' : 'Create Your First Note'}</span>
               </button>
             )}
           </div>
@@ -520,9 +543,11 @@ export default function PersonalSpacePage() {
                 <span>Items in trash are automatically deleted after 30 days.</span>
                 <button
                   onClick={handleEmptyTrash}
-                  className="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs transition-colors"
+                  disabled={isEmptyingTrash}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs transition-colors disabled:opacity-50"
                 >
-                  Empty Trash
+                  {isEmptyingTrash && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  <span>{isEmptyingTrash ? 'Emptying...' : 'Empty Trash'}</span>
                 </button>
               </div>
             )}
