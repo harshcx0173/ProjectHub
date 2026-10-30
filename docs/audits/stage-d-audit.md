@@ -97,3 +97,4 @@ All 48 routes compiled with 0 errors. First Load JS: 103 kB.
 - **Zero Emojis**: Enforced across all components, badges, and empty states. Only Lucide icons (`StickyNote`, `Plus`, `Pin`, `Palette`, `CheckSquare`, `FileText`, `LayoutGrid`, `List`, `Search`, `Archive`, `Trash2`, `RotateCcw`, `Check`, `CloudOff`, `Clock`, `ArrowRight`, `ExternalLink`, `AlertCircle`) are used.
 - **Light Theme**: Built exclusively with design tokens (`bg-white`, `border-border`, `bg-[#FAF9F6]`, `shadow-subtle`).
 - **Typography**: Clean Inter typography with explicit hierarchy and accessible contrast.
+

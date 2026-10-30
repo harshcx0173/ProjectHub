@@ -43,22 +43,32 @@ export function PersonalNoteCard({
   const [checklist, setChecklist] = useState<ChecklistItem[]>(note.checklistItems || []);
   const [newChecklistText, setNewChecklistText] = useState('');
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
+  const isFocusedRef = useRef(false);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Sync internal state if note prop updates externally
+  // Sync internal state if note prop updates externally (only when not actively typing)
   useEffect(() => {
-    setTitle(note.title);
-    setContent(note.content);
+    if (!isFocusedRef.current) {
+      setTitle(note.title);
+      setContent(note.content);
+    }
     setContentType(note.contentType);
     setChecklist(note.checklistItems || []);
   }, [note.title, note.content, note.contentType, note.checklistItems]);
-
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const triggerDebouncedUpdate = (updates: Partial<PersonalNote>) => {
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = setTimeout(() => {
       onUpdate(note.id, updates);
-    }, 500);
+    }, 800);
+  };
+
+  const handleBlur = () => {
+    isFocusedRef.current = false;
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      onUpdate(note.id, { title, content });
+    }
   };
 
   const handleTitleChange = (val: string) => {
@@ -147,6 +157,10 @@ export function PersonalNoteCard({
           type="text"
           value={title}
           disabled={isTrashView}
+          onFocus={() => {
+            isFocusedRef.current = true;
+          }}
+          onBlur={handleBlur}
           onChange={(e) => handleTitleChange(e.target.value)}
           placeholder="Untitled Note"
           className="w-full bg-transparent text-xs font-bold text-gray-900 placeholder-gray-500/60 focus:outline-none focus:ring-0 tracking-tight"
@@ -278,6 +292,10 @@ export function PersonalNoteCard({
           <textarea
             value={content}
             disabled={isTrashView}
+            onFocus={() => {
+              isFocusedRef.current = true;
+            }}
+            onBlur={handleBlur}
             onChange={(e) => handleContentChange(e.target.value)}
             placeholder="Write your note here..."
             className="w-full flex-1 bg-transparent text-xs text-gray-800 placeholder-gray-500/50 resize-none focus:outline-none focus:ring-0 leading-relaxed font-normal"

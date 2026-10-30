@@ -96,3 +96,4 @@ export interface PersonalNote {
   createdAt: string;
   updatedAt: string;
 }
+

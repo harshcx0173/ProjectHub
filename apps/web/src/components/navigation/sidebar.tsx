@@ -9,6 +9,7 @@ import {
   Home,
   CheckSquare,
   StickyNote,
+  MessageSquare,
   Inbox,
   Search,
   Pin,
@@ -111,6 +112,19 @@ export function Sidebar({
         >
           <StickyNote className="h-4 w-4 shrink-0" />
           {!isCollapsed && <span>Personal Space</span>}
+        </Link>
+
+        <Link
+          href="/messages"
+          className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+            pathname.startsWith('/messages')
+              ? 'bg-primary/10 text-primary font-semibold'
+              : 'text-gray-700 hover:bg-gray-100'
+          }`}
+          title={isCollapsed ? 'Messages' : undefined}
+        >
+          <MessageSquare className="h-4 w-4 shrink-0" />
+          {!isCollapsed && <span>Messages</span>}
         </Link>
 
         <Link

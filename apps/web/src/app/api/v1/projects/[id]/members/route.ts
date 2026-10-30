@@ -179,6 +179,33 @@ export async function POST(
       return NextResponse.json({ error: 'ADD_MEMBER_FAILED', message: insertError.message }, { status: 500 });
     }
 
+    // Fetch project name & key for notification
+    const { data: project } = await supabase
+      .from('projects')
+      .select('name, key')
+      .eq('id', projectId)
+      .maybeSingle();
+
+    const projectName = project?.name || 'Project';
+    const projectKey = project?.key || '';
+
+    // Create in-app notification for the newly assigned member
+    try {
+      await supabase.from('notifications').insert({
+        user_id: userId,
+        actor_id: user.id,
+        type: 'project_invite',
+        title: `Added to project: ${projectName}`,
+        body: `You have been added to the project ${projectName} (${projectKey}).`,
+        link_url: `/projects/${projectId}/board`,
+        metadata: {
+          projectId,
+          projectName,
+          projectKey,
+        },
+      });
+    } catch {}
+
     await recordAuditLog({
       actorId: user.id,
       action: 'project.member.add',

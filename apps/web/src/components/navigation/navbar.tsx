@@ -38,6 +38,62 @@ export function Navbar({
   const router = useRouter();
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const lastKnownNotifIdRef = React.useRef<string | null>(null);
+
+  // Poll for notifications and trigger desktop push
+  React.useEffect(() => {
+    let isMounted = true;
+
+    // Ask for Notification permission on first load if default
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+
+    const checkNotifications = async () => {
+      try {
+        const res = await fetch('/api/v1/notifications');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!isMounted) return;
+
+        const count = typeof data.unreadCount === 'number' ? data.unreadCount : 0;
+        setUnreadCount(count);
+
+        const list = Array.isArray(data.notifications) ? data.notifications : [];
+        if (list.length > 0) {
+          const newest = list[0];
+          if (
+            lastKnownNotifIdRef.current &&
+            newest.id !== lastKnownNotifIdRef.current &&
+            !newest.is_read
+          ) {
+            // New notification arrived! Trigger Desktop push if permitted
+            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+              try {
+                const pushNotif = new Notification(newest.title, {
+                  body: newest.body,
+                  icon: '/favicon.ico',
+                });
+                pushNotif.onclick = () => {
+                  window.focus();
+                  if (newest.link_url) router.push(newest.link_url);
+                };
+              } catch {}
+            }
+          }
+          lastKnownNotifIdRef.current = newest.id;
+        }
+      } catch {}
+    };
+
+    checkNotifications();
+    const interval = setInterval(checkNotifications, 15000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [router]);
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
@@ -170,12 +226,21 @@ export function Navbar({
 
         {/* Notifications Bell */}
         <button
-          onClick={() => router.push('/notifications')}
+          onClick={() => {
+            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+              Notification.requestPermission().catch(() => {});
+            }
+            router.push('/notifications');
+          }}
           className="relative p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
-          title="Notifications"
+          title={unreadCount > 0 ? `${unreadCount} unread notifications` : 'Notifications'}
         >
           <Bell className="h-4 w-4" />
-          <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-primary" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
         </button>
 
         {/* Profile Avatar & Dropdown */}

@@ -48,3 +48,4 @@ describe('SMTP Invitation Email Template Builder', () => {
     expect(html).toContain('Sign in with your existing account credentials');
   });
 });
+
