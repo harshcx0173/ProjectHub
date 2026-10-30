@@ -41,3 +41,4 @@ export async function GET(_request: NextRequest) {
     return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR', message: err.message }, { status: 500 });
   }
 }
+

@@ -181,10 +181,14 @@ export async function POST(request: NextRequest) {
       }
 
       // Add both members
-      await supabase.from('conversation_members').insert([
+      const { error: memberInsertErr } = await supabase.from('conversation_members').insert([
         { conversation_id: conv.id, user_id: user.id },
         { conversation_id: conv.id, user_id: targetUserId },
       ]);
+
+      if (memberInsertErr) {
+        return NextResponse.json({ error: 'CREATE_FAILED', message: memberInsertErr.message }, { status: 500 });
+      }
 
       return NextResponse.json({ conversationId: conv.id, isExisting: false }, { status: 201 });
     } else if (type === 'group') {
@@ -216,7 +220,10 @@ export async function POST(request: NextRequest) {
         user_id: uid,
       }));
 
-      await supabase.from('conversation_members').insert(memberRows);
+      const { error: groupMembersErr } = await supabase.from('conversation_members').insert(memberRows);
+      if (groupMembersErr) {
+        return NextResponse.json({ error: 'CREATE_FAILED', message: groupMembersErr.message }, { status: 500 });
+      }
 
       return NextResponse.json({ conversationId: conv.id, isExisting: false }, { status: 201 });
     } else {

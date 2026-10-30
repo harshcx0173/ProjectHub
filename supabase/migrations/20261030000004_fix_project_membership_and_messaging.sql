@@ -76,22 +76,34 @@ create index if not exists idx_conv_messages_conv on public.conversation_message
 create index if not exists idx_conv_updated on public.conversations(updated_at desc);
 
 -- ==============================================================================
--- 3. Row Level Security for Messaging (Strict Member Isolation)
+-- 3. Row Level Security for Messaging (Strict Member Isolation with Recursion-Free Helper)
 -- ==============================================================================
 
 alter table public.conversations enable row level security;
 alter table public.conversation_members enable row level security;
 alter table public.conversation_messages enable row level security;
 
+-- Security Definer helper to prevent RLS infinite recursion on conversation_members
+create or replace function public.is_conversation_member(p_conv_id uuid, p_user_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+    select exists (
+        select 1 from public.conversation_members
+        where conversation_id = p_conv_id
+          and user_id = p_user_id
+    );
+$$;
+
 -- Conversations RLS
 drop policy if exists "Members can view conversations" on public.conversations;
 create policy "Members can view conversations"
 on public.conversations for select
 using (
-    exists (
-        select 1 from public.conversation_members cm
-        where cm.conversation_id = conversations.id and cm.user_id = auth.uid()
-    )
+    public.is_conversation_member(id, auth.uid())
 );
 
 drop policy if exists "Authenticated users can create conversations" on public.conversations;
@@ -103,10 +115,7 @@ drop policy if exists "Members can update conversation metadata" on public.conve
 create policy "Members can update conversation metadata"
 on public.conversations for update
 using (
-    exists (
-        select 1 from public.conversation_members cm
-        where cm.conversation_id = conversations.id and cm.user_id = auth.uid()
-    )
+    public.is_conversation_member(id, auth.uid())
 );
 
 -- Conversation Members RLS
@@ -115,11 +124,7 @@ create policy "Members can view conversation members"
 on public.conversation_members for select
 using (
     user_id = auth.uid()
-    or exists (
-        select 1 from public.conversation_members cm2
-        where cm2.conversation_id = conversation_members.conversation_id
-          and cm2.user_id = auth.uid()
-    )
+    or public.is_conversation_member(conversation_id, auth.uid())
 );
 
 drop policy if exists "Authenticated users can add members" on public.conversation_members;
@@ -137,11 +142,7 @@ drop policy if exists "Members can view messages" on public.conversation_message
 create policy "Members can view messages"
 on public.conversation_messages for select
 using (
-    exists (
-        select 1 from public.conversation_members cm
-        where cm.conversation_id = conversation_messages.conversation_id
-          and cm.user_id = auth.uid()
-    )
+    public.is_conversation_member(conversation_id, auth.uid())
 );
 
 drop policy if exists "Members can insert messages" on public.conversation_messages;
@@ -149,11 +150,7 @@ create policy "Members can insert messages"
 on public.conversation_messages for insert
 with check (
     sender_id = auth.uid()
-    and exists (
-        select 1 from public.conversation_members cm
-        where cm.conversation_id = conversation_messages.conversation_id
-          and cm.user_id = auth.uid()
-    )
+    and public.is_conversation_member(conversation_id, auth.uid())
 );
 
 drop policy if exists "Senders can edit their own messages" on public.conversation_messages;
