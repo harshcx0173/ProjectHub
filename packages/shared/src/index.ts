@@ -6,4 +6,5 @@ export * from './schemas/project';
 export * from './schemas/task';
 export * from './schemas/audit';
 export * from './schemas/file';
+export * from './schemas/personal-note';
 export * from './types/index';

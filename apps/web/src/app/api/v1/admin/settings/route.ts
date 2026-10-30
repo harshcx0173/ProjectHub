@@ -27,11 +27,19 @@ export async function GET(_request: NextRequest) {
     }
 
     return NextResponse.json({
-      settings: settings || {
-        company_name: 'Hydrated Studio',
-        app_name: 'Project Hub',
-        timezone: 'UTC',
-        working_days: [1, 2, 3, 4, 5],
+      settings: {
+        ...(settings || {
+          company_name: 'Hydrated Studio',
+          app_name: 'Project Hub',
+          timezone: 'UTC',
+          working_days: [1, 2, 3, 4, 5],
+        }),
+        personal_notes_limits: (settings as any)?.personal_notes_limits || {
+          maxNotesPerUser: 100,
+          maxCharLength: 5000,
+          maxChecklistItems: 50,
+          trashRetentionDays: 30,
+        },
       },
     });
   } catch (err: any) {
@@ -111,7 +119,17 @@ export async function PATCH(request: NextRequest) {
       metadata: updates,
     });
 
-    return NextResponse.json({ settings: saved });
+    return NextResponse.json({
+      settings: {
+        ...saved,
+        personal_notes_limits: body.personalNotesLimits || {
+          maxNotesPerUser: 100,
+          maxCharLength: 5000,
+          maxChecklistItems: 50,
+          trashRetentionDays: 30,
+        },
+      },
+    });
   } catch (err: any) {
     return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR', message: err.message }, { status: 500 });
   }

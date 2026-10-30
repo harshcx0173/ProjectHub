@@ -8,6 +8,7 @@ import { DynamicIcon } from '@/components/icons/dynamic-icon';
 import {
   Home,
   CheckSquare,
+  StickyNote,
   Inbox,
   Search,
   Pin,
@@ -97,6 +98,19 @@ export function Sidebar({
         >
           <CheckSquare className="h-4 w-4 shrink-0" />
           {!isCollapsed && <span>My Tasks</span>}
+        </Link>
+
+        <Link
+          href="/personal"
+          className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+            pathname.startsWith('/personal')
+              ? 'bg-primary/10 text-primary font-semibold'
+              : 'text-gray-700 hover:bg-gray-100'
+          }`}
+          title={isCollapsed ? 'Personal Space' : undefined}
+        >
+          <StickyNote className="h-4 w-4 shrink-0" />
+          {!isCollapsed && <span>Personal Space</span>}
         </Link>
 
         <Link

@@ -7,6 +7,10 @@ export default function AdminSettingsPage() {
   const [companyName, setCompanyName] = useState('Hydrated Studio');
   const [appName, setAppName] = useState('Project Hub');
   const [timezone, setTimezone] = useState('UTC');
+  const [maxNotesPerUser, setMaxNotesPerUser] = useState(100);
+  const [maxCharLength, setMaxCharLength] = useState(5000);
+  const [maxChecklistItems, setMaxChecklistItems] = useState(50);
+  const [trashRetentionDays, setTrashRetentionDays] = useState(30);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
@@ -20,6 +24,12 @@ export default function AdminSettingsPage() {
           setCompanyName(data.settings.company_name || 'Hydrated Studio');
           setAppName(data.settings.app_name || 'Project Hub');
           setTimezone(data.settings.timezone || 'UTC');
+          if (data.settings.personal_notes_limits) {
+            setMaxNotesPerUser(data.settings.personal_notes_limits.maxNotesPerUser || 100);
+            setMaxCharLength(data.settings.personal_notes_limits.maxCharLength || 5000);
+            setMaxChecklistItems(data.settings.personal_notes_limits.maxChecklistItems || 50);
+            setTrashRetentionDays(data.settings.personal_notes_limits.trashRetentionDays || 30);
+          }
         }
         setLoading(false);
       })
@@ -39,7 +49,17 @@ export default function AdminSettingsPage() {
       const res = await fetch('/api/v1/admin/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyName, appName, timezone }),
+        body: JSON.stringify({
+          companyName,
+          appName,
+          timezone,
+          personalNotesLimits: {
+            maxNotesPerUser,
+            maxCharLength,
+            maxChecklistItems,
+            trashRetentionDays,
+          },
+        }),
       });
 
       if (!res.ok) {
@@ -121,6 +141,61 @@ export default function AdminSettingsPage() {
                 onChange={(e) => setTimezone(e.target.value)}
                 className="w-full text-xs px-3 py-2 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary"
               />
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-gray-100">
+            <h2 className="text-xs font-bold text-gray-900 tracking-tight uppercase mb-1">Personal Space Limits</h2>
+            <p className="text-[11px] text-gray-500 mb-4">Configure usage limits and retention policies for user sticky notes.</p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-semibold text-gray-700 block mb-1">Max Notes per User</label>
+                <input
+                  type="number"
+                  min="10"
+                  max="500"
+                  value={maxNotesPerUser}
+                  onChange={(e) => setMaxNotesPerUser(Number(e.target.value))}
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-700 block mb-1">Max Character Length per Note</label>
+                <input
+                  type="number"
+                  min="500"
+                  max="20000"
+                  value={maxCharLength}
+                  onChange={(e) => setMaxCharLength(Number(e.target.value))}
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-700 block mb-1">Max Checklist Items per Note</label>
+                <input
+                  type="number"
+                  min="5"
+                  max="200"
+                  value={maxChecklistItems}
+                  onChange={(e) => setMaxChecklistItems(Number(e.target.value))}
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-700 block mb-1">Trash Retention Days</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="90"
+                  value={trashRetentionDays}
+                  onChange={(e) => setTrashRetentionDays(Number(e.target.value))}
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
             </div>
           </div>
 
