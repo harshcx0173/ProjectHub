@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { createClient } from '@/lib/supabase/server';
 import { checkUserPermission } from '@/lib/permissions';
 import { recordAuditLog } from '@/lib/audit';
+import { sendInvitationEmail } from '@/lib/email/smtp';
 
 export async function GET(_request: NextRequest) {
   try {
@@ -89,17 +90,46 @@ export async function POST(request: NextRequest) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:4321';
     const inviteLink = `${appUrl}/invite/accept?token=${rawToken}`;
 
+    // Fetch inviter profile and org settings for personalized email
+    const [{ data: inviterProfile }, { data: orgSettings }] = await Promise.all([
+      supabase.from('profiles').select('full_name, org_role').eq('id', user.id).maybeSingle(),
+      supabase.from('org_settings').select('name').limit(1).maybeSingle(),
+    ]);
+
+    const orgName = orgSettings?.name || process.env.NEXT_PUBLIC_APP_NAME || 'Project Hub';
+    const inviterName = inviterProfile?.full_name || 'Team Administrator';
+    const inviterRole = inviterProfile?.org_role || 'Admin';
+
+    // Send invitation email asynchronously
+    const emailResult = await sendInvitationEmail({
+      recipientEmail: email,
+      inviterName,
+      inviterRole,
+      orgName,
+      inviteLink,
+      expiresAt,
+    });
+
     await recordAuditLog({
       actorId: user.id,
       action: 'invitation.create',
       entity: 'invitation',
       entityId: invite.id,
-      metadata: { email, orgRole },
+      metadata: {
+        email,
+        orgRole,
+        emailSent: emailResult.success,
+        emailError: emailResult.error || null,
+      },
     });
 
     return NextResponse.json({
       invitation: invite,
       inviteLink,
+      emailDelivery: {
+        sent: emailResult.success,
+        error: emailResult.error || null,
+      },
     }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR', message: err.message }, { status: 500 });
@@ -154,18 +184,45 @@ export async function PATCH(request: NextRequest) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:4321';
     const inviteLink = `${appUrl}/invite/accept?token=${rawToken}`;
 
+    // Fetch inviter profile and org settings for email dispatch
+    const [{ data: inviterProfile }, { data: orgSettings }] = await Promise.all([
+      supabase.from('profiles').select('full_name, org_role').eq('id', user.id).maybeSingle(),
+      supabase.from('org_settings').select('name').limit(1).maybeSingle(),
+    ]);
+
+    const orgName = orgSettings?.name || process.env.NEXT_PUBLIC_APP_NAME || 'Project Hub';
+    const inviterName = inviterProfile?.full_name || 'Team Administrator';
+    const inviterRole = inviterProfile?.org_role || 'Admin';
+
+    const emailResult = await sendInvitationEmail({
+      recipientEmail: updatedInvite.email,
+      inviterName,
+      inviterRole,
+      orgName,
+      inviteLink,
+      expiresAt,
+    });
+
     await recordAuditLog({
       actorId: user.id,
       action: 'invitation.resend',
       entity: 'invitation',
       entityId: inviteId,
-      metadata: { email: updatedInvite.email },
+      metadata: {
+        email: updatedInvite.email,
+        emailSent: emailResult.success,
+        emailError: emailResult.error || null,
+      },
     });
 
     return NextResponse.json({
       success: true,
       inviteLink,
       invitation: updatedInvite,
+      emailDelivery: {
+        sent: emailResult.success,
+        error: emailResult.error || null,
+      },
       message: 'Invitation refreshed with a new 7-day token',
     });
   } catch (err: any) {

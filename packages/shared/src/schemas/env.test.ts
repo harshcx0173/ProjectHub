@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateEnv } from './env';
+import { validateEnv, validateSmtpConfig } from './env';
 import { acceptInvitationSchema } from './invitation';
 
 describe('Environment Variable Validation', () => {
@@ -22,6 +22,29 @@ describe('Environment Variable Validation', () => {
 
     expect(validConfig.NEXT_PUBLIC_APP_NAME).toBe('Project Hub');
     expect(validConfig.STORAGE_PROVIDER).toBe('supabase');
+  });
+
+  it('validates SMTP configuration with strict requirements', () => {
+    expect(() =>
+      validateSmtpConfig({
+        SMTP_HOST: '',
+        SMTP_PORT: 'invalid',
+        SMTP_USER: '',
+        SMTP_PASS: '',
+      })
+    ).toThrowError(/SMTP configuration is missing or invalid/);
+
+    const validSmtp = validateSmtpConfig({
+      SMTP_HOST: 'smtp.gmail.com',
+      SMTP_PORT: '587',
+      SMTP_USER: 'admin@example.com',
+      SMTP_PASS: 'app-password-1234',
+      SMTP_FROM_NAME: 'Custom Project Hub',
+    });
+
+    expect(validSmtp.SMTP_HOST).toBe('smtp.gmail.com');
+    expect(validSmtp.SMTP_PORT).toBe(587);
+    expect(validSmtp.SMTP_FROM_NAME).toBe('Custom Project Hub');
   });
 });
 

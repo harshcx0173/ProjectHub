@@ -17,9 +17,44 @@ export const envSchema = z.object({
   // Storage
   STORAGE_PROVIDER: z.enum(['supabase', 'r2']).default('supabase'),
   STORAGE_BUCKET_NAME: z.string().default('project-files'),
+
+  // Optional SMTP Configuration (Gmail / Google Workspace App Password)
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().optional().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM_NAME: z.string().optional().default('Project Hub'),
+  SMTP_FROM_EMAIL: z.string().email().optional(),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
+
+export const smtpConfigSchema = z.object({
+  SMTP_HOST: z.string().min(1, 'SMTP_HOST is required (e.g., smtp.gmail.com)'),
+  SMTP_PORT: z.coerce.number().int().positive('SMTP_PORT must be a valid positive port (e.g., 587 or 465)'),
+  SMTP_USER: z.string().min(1, 'SMTP_USER is required (e.g., email@gmail.com)'),
+  SMTP_PASS: z.string().min(1, 'SMTP_PASS app password is required'),
+  SMTP_FROM_NAME: z.string().default('Project Hub'),
+  SMTP_FROM_EMAIL: z.string().email().optional(),
+});
+
+export type SmtpConfig = z.infer<typeof smtpConfigSchema>;
+
+/**
+ * Validates SMTP configuration strictly before sending emails.
+ */
+export function validateSmtpConfig(rawEnv: Record<string, string | undefined>): SmtpConfig {
+  const result = smtpConfigSchema.safeParse(rawEnv);
+  if (!result.success) {
+    const errorDetails = result.error.errors
+      .map((err) => `  - ${err.path.join('.')}: ${err.message}`)
+      .join('\n');
+    throw new Error(
+      `SMTP configuration is missing or invalid:\n${errorDetails}\nPlease configure SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS in your environment.`
+    );
+  }
+  return result.data;
+}
 
 /**
  * Validates environment variables. Throws immediately with descriptive message if invalid.

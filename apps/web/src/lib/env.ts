@@ -13,6 +13,12 @@ try {
     ADMIN_BOOTSTRAP_EMAIL: process.env.ADMIN_BOOTSTRAP_EMAIL,
     STORAGE_PROVIDER: process.env.STORAGE_PROVIDER,
     STORAGE_BUCKET_NAME: process.env.STORAGE_BUCKET_NAME,
+    SMTP_HOST: process.env.SMTP_HOST,
+    SMTP_PORT: process.env.SMTP_PORT,
+    SMTP_USER: process.env.SMTP_USER,
+    SMTP_PASS: process.env.SMTP_PASS,
+    SMTP_FROM_NAME: process.env.SMTP_FROM_NAME,
+    SMTP_FROM_EMAIL: process.env.SMTP_FROM_EMAIL,
   });
 } catch (error) {
   // If in build phase or browser without server secrets, allow partial client env if defined
@@ -27,6 +33,8 @@ try {
       ADMIN_BOOTSTRAP_EMAIL: process.env.ADMIN_BOOTSTRAP_EMAIL || 'wp34.department@gmail.com',
       STORAGE_PROVIDER: 'supabase',
       STORAGE_BUCKET_NAME: 'project-files',
+      SMTP_PORT: 587,
+      SMTP_FROM_NAME: 'Project Hub',
     };
   } else {
     // Server runtime: fail immediately if missing required credentials
