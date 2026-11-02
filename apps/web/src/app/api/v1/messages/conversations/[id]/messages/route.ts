@@ -146,35 +146,33 @@ export async function POST(
       return NextResponse.json({ error: 'SEND_FAILED', message: msgErr.message }, { status: 500 });
     }
 
-    // Update conversation timestamp
-    try {
-      await supabase
+    // Update conversation timestamp and notify other members concurrently
+    await Promise.allSettled([
+      supabase
         .from('conversations')
         .update({ updated_at: new Date().toISOString() })
-        .eq('id', conversationId);
-    } catch {}
+        .eq('id', conversationId),
+      (async () => {
+        const { data: otherMembers } = await supabase
+          .from('conversation_members')
+          .select('user_id')
+          .eq('conversation_id', conversationId)
+          .neq('user_id', user.id);
 
-    // Notify other members
-    const { data: otherMembers } = await supabase
-      .from('conversation_members')
-      .select('user_id')
-      .eq('conversation_id', conversationId)
-      .neq('user_id', user.id);
-
-    if (otherMembers && otherMembers.length > 0) {
-      const senderName = (message.profiles as any)?.full_name || 'A team member';
-      const notifs = otherMembers.map((m: any) => ({
-        user_id: m.user_id,
-        actor_id: user.id,
-        type: 'mention',
-        title: `Message from ${senderName}`,
-        body: content.slice(0, 100),
-        link_url: `/messages?id=${conversationId}`,
-      }));
-      try {
-        await supabase.from('notifications').insert(notifs);
-      } catch {}
-    }
+        if (otherMembers && otherMembers.length > 0) {
+          const senderName = (message.profiles as any)?.full_name || 'A team member';
+          const notifs = otherMembers.map((m: any) => ({
+            user_id: m.user_id,
+            actor_id: user.id,
+            type: 'mention',
+            title: `Message from ${senderName}`,
+            body: content.slice(0, 100),
+            link_url: `/messages?id=${conversationId}`,
+          }));
+          await supabase.from('notifications').insert(notifs);
+        }
+      })(),
+    ]);
 
     return NextResponse.json({
       message: {

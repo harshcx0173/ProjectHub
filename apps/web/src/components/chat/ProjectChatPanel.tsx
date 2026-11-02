@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   MessageSquare,
   ChevronRight,
@@ -27,7 +27,6 @@ import {
   Link as LinkIcon,
   X,
   LucideIcon,
-  Loader2,
 } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { format } from 'date-fns';
@@ -55,7 +54,6 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
   const [inputText, setInputText] = useState('');
   const [recording, setRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [sending, setSending] = useState(false);
   const [activeReactionMsgId, setActiveReactionMsgId] = useState<string | null>(null);
 
   // Search & Filter
@@ -78,13 +76,18 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const activeChannelRef = useRef<any>(null);
 
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+  const currentUserNameRef = useRef(currentUserName);
+  useEffect(() => {
+    currentUserNameRef.current = currentUserName;
+  }, [currentUserName]);
 
   // 1. Fetch channel & Current User
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user) {
+      if (data?.user) {
         setCurrentUserId(data.user.id);
         supabase
           .from('profiles')
@@ -116,7 +119,12 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
         .then((res) => res.json())
         .then((data) => {
           if (data.messages) {
-            setMessages(data.messages);
+            setMessages((prev) => {
+              const pending = prev.filter(
+                (m) => String(m.id).startsWith('temp-') && !data.messages.some((s: any) => s.content === m.content)
+              );
+              return [...data.messages, ...pending];
+            });
             scrollToBottom();
           }
         })
@@ -124,6 +132,9 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
     };
 
     loadMessages();
+
+    // Fallback sync polling every 5 seconds
+    const interval = setInterval(loadMessages, 5000);
 
     // Realtime channel
     const channel = supabase
@@ -153,7 +164,7 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
       )
       .on('broadcast', { event: 'typing' }, (payload) => {
         const typingName = payload.payload?.userName;
-        if (typingName && typingName !== currentUserName) {
+        if (typingName && typingName !== currentUserNameRef.current) {
           setTypingUsers((prev) => Array.from(new Set([...prev, typingName])));
           if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
           typingTimeoutRef.current = setTimeout(() => {
@@ -163,10 +174,14 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
       })
       .subscribe();
 
+    activeChannelRef.current = channel;
+
     return () => {
+      clearInterval(interval);
+      activeChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [channelId, currentUserName, supabase]);
+  }, [channelId, supabase]);
 
   const scrollToBottom = () => {
     setTimeout(() => {
@@ -176,10 +191,10 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
 
   const handleInputChange = (val: string) => {
     setInputText(val);
-    if (!channelId) return;
+    if (!channelId || !activeChannelRef.current) return;
 
     // Broadcast typing event (throttled)
-    supabase.channel(`chat_room_${channelId}`).send({
+    activeChannelRef.current.send({
       type: 'broadcast',
       event: 'typing',
       payload: { userName: currentUserName },
@@ -188,14 +203,34 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!inputText.trim() || !channelId || sending) return;
+    const text = inputText.trim();
+    if (!text || !channelId) return;
 
-    setSending(true);
-    const text = inputText;
     const parentId = replyingTo ? replyingTo.id : null;
-
     setInputText('');
     setReplyingTo(null);
+
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const optimisticMessage = {
+      id: tempId,
+      projectId,
+      channelId,
+      userId: currentUserId,
+      parentId,
+      content: text,
+      isPinned: false,
+      isEdited: false,
+      createdAt: new Date().toISOString(),
+      author: {
+        id: currentUserId,
+        full_name: currentUserName,
+        avatar_url: null,
+      },
+      reactions: [],
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+    scrollToBottom();
 
     try {
       const res = await fetch(`/api/v1/channels/${channelId}/messages`, {
@@ -206,13 +241,15 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
 
       if (res.ok) {
         const data = await res.json();
-        setMessages((prev) => [...prev, data.message]);
-        scrollToBottom();
+        if (data.message) {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === tempId ? data.message : m))
+          );
+          scrollToBottom();
+        }
       }
     } catch (err) {
       console.error(err);
-    } finally {
-      setSending(false);
     }
   };
 
@@ -886,10 +923,10 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
 
             <button
               type="submit"
-              disabled={!inputText.trim() || sending}
+              disabled={!inputText.trim()}
               className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors disabled:opacity-40"
             >
-              {sending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+              <Send className="h-3.5 w-3.5" />
             </button>
           </div>
         </form>

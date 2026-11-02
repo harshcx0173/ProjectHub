@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   MessageSquare,
   Plus,
@@ -13,6 +13,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { createClient } from '@/lib/supabase/client';
 
 interface Conversation {
   id: string;
@@ -59,10 +60,10 @@ export default function MessagesPage() {
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
-  const [sending, setSending] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'direct' | 'group'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // New Chat Modal state
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
@@ -77,6 +78,32 @@ export default function MessagesPage() {
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const selectedConvIdRef = useRef<string | null>(selectedConvId);
+  const conversationsRef = useRef<Conversation[]>(conversations);
+  const currentUserIdRef = useRef<string | null>(currentUserId);
+
+  useEffect(() => {
+    selectedConvIdRef.current = selectedConvId;
+  }, [selectedConvId]);
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId;
+  }, [currentUserId]);
+
+  const supabase = useMemo(() => createClient(), []);
+
+  // Fetch current user
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user) {
+        setCurrentUserId(data.user.id);
+      }
+    });
+  }, [supabase]);
 
   // Fetch Conversations
   const fetchConversations = useCallback(async (selectIdAfter?: string) => {
@@ -107,7 +134,12 @@ export default function MessagesPage() {
       const res = await fetch(`/api/v1/messages/conversations/${convId}/messages`);
       if (!res.ok) return;
       const data = await res.json();
-      setMessages(Array.isArray(data.messages) ? data.messages : []);
+      const serverMsgs: MessageItem[] = Array.isArray(data.messages) ? data.messages : [];
+      setMessages((prev) => {
+        // Retain any pending optimistic messages that haven't finalized yet
+        const pendingOptimistic = prev.filter((m) => m.id.startsWith('temp-') && !serverMsgs.some((s) => s.content === m.content));
+        return [...serverMsgs, ...pendingOptimistic];
+      });
     } catch {} finally {
       setLoadingMessages(false);
     }
@@ -121,13 +153,119 @@ export default function MessagesPage() {
     setLoadingMessages(true);
     fetchMessages(selectedConvId);
 
-    // Live polling for responsive chat (every 3 seconds)
+    // Fallback sync polling every 5 seconds
     const interval = setInterval(() => {
       fetchMessages(selectedConvId);
-    }, 3000);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [selectedConvId, fetchMessages]);
+
+  // Realtime subscription for instant message delivery
+  useEffect(() => {
+    const channel = supabase
+      .channel('realtime_conversation_messages')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'conversation_messages',
+        },
+        (payload) => {
+          const newMsg = payload.new as any;
+          if (!newMsg) return;
+
+          const activeId = selectedConvIdRef.current;
+          const uid = currentUserIdRef.current;
+          const convList = conversationsRef.current;
+
+          // 1. If currently in this conversation, append or replace optimistic message instantly
+          if (newMsg.conversation_id === activeId) {
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === newMsg.id)) {
+                return prev;
+              }
+
+              const isSelf = Boolean(uid && newMsg.sender_id === uid);
+              const tempIndex = prev.findIndex(
+                (m) => m.id.startsWith('temp-') && m.content === newMsg.content && m.isSelf
+              );
+
+              let senderName = isSelf ? 'You' : 'Member';
+              let senderAvatar: string | null = null;
+              let senderRole = 'Member';
+
+              const activeConv = convList.find((c) => c.id === newMsg.conversation_id);
+              if (activeConv?.members) {
+                const mem = activeConv.members.find((m: any) => m.id === newMsg.sender_id);
+                if (mem) {
+                  senderName = mem.full_name || mem.fullName || 'Member';
+                  senderAvatar = mem.avatar_url || mem.avatarUrl || null;
+                  senderRole = mem.org_role || mem.orgRole || 'Member';
+                }
+              }
+
+              const formattedItem: MessageItem = {
+                id: newMsg.id,
+                conversationId: newMsg.conversation_id,
+                senderId: newMsg.sender_id,
+                senderName,
+                senderAvatar,
+                senderRole,
+                content: newMsg.content,
+                createdAt: newMsg.created_at,
+                updatedAt: newMsg.updated_at || newMsg.created_at,
+                isSelf,
+              };
+
+              if (tempIndex !== -1) {
+                const updated = [...prev];
+                updated[tempIndex] = formattedItem;
+                return updated;
+              }
+
+              return [...prev, formattedItem];
+            });
+          }
+
+          // 2. Update conversation list preview and move active chat to top
+          setConversations((prev) => {
+            const convIndex = prev.findIndex((c) => c.id === newMsg.conversation_id);
+            if (convIndex === -1) {
+              fetchConversations();
+              return prev;
+            }
+
+            const existingConv = prev[convIndex];
+            if (!existingConv) return prev;
+
+            const targetConv: Conversation = { ...existingConv };
+            let senderName = 'Member';
+            const mem = targetConv.members?.find((m: any) => m.id === newMsg.sender_id);
+            if (mem) {
+              senderName = mem.full_name || mem.fullName || 'Member';
+            }
+
+            targetConv.latestMessage = {
+              id: newMsg.id,
+              content: newMsg.content,
+              senderName,
+              createdAt: newMsg.created_at,
+            };
+            targetConv.updatedAt = newMsg.created_at;
+
+            const remaining = prev.filter((_, idx) => idx !== convIndex);
+            return [targetConv, ...remaining];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, fetchConversations]);
 
   // Scroll to bottom on messages change
   useEffect(() => {
@@ -163,20 +301,21 @@ export default function MessagesPage() {
       .finally(() => setLoadingUsers(false));
   }, [isNewChatOpen]);
 
-  // Send Message
+  // Send Message with instant optimistic UI update
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const content = inputMessage.trim();
-    if (!content || !selectedConvId || sending) return;
+    if (!content || !selectedConvId) return;
 
-    setSending(true);
+    // Reset input immediately so user can type next message without blocking
     setInputMessage('');
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
     // Optimistic message
     const tempMsg: MessageItem = {
-      id: crypto.randomUUID(),
+      id: tempId,
       conversationId: selectedConvId,
-      senderId: 'self',
+      senderId: currentUserId || 'self',
       senderName: 'You',
       senderAvatar: null,
       senderRole: 'Member',
@@ -186,6 +325,25 @@ export default function MessagesPage() {
       isSelf: true,
     };
     setMessages((prev) => [...prev, tempMsg]);
+
+    // Optimistically update conversation sidebar preview
+    setConversations((prev) => {
+      const idx = prev.findIndex((c) => c.id === selectedConvId);
+      if (idx === -1) return prev;
+      const existingConv = prev[idx];
+      if (!existingConv) return prev;
+
+      const target: Conversation = { ...existingConv };
+      target.latestMessage = {
+        id: tempId,
+        content,
+        senderName: 'You',
+        createdAt: tempMsg.createdAt,
+      };
+      target.updatedAt = tempMsg.createdAt;
+      const remaining = prev.filter((_, i) => i !== idx);
+      return [target, ...remaining];
+    });
 
     try {
       const res = await fetch(`/api/v1/messages/conversations/${selectedConvId}/messages`, {
@@ -198,13 +356,30 @@ export default function MessagesPage() {
         throw new Error('Failed to send message');
       }
 
-      // Refresh to get server timestamps
-      fetchMessages(selectedConvId);
-      fetchConversations(selectedConvId);
+      const data = await res.json();
+      if (data?.message) {
+        const realMsg = data.message;
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...realMsg, isSelf: true } : m))
+        );
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === selectedConvId
+              ? {
+                  ...c,
+                  latestMessage: {
+                    id: realMsg.id,
+                    content: realMsg.content,
+                    senderName: 'You',
+                    createdAt: realMsg.createdAt,
+                  },
+                }
+              : c
+          )
+        );
+      }
     } catch {
       // Retain optimistic message
-    } finally {
-      setSending(false);
     }
   };
 
@@ -519,10 +694,10 @@ export default function MessagesPage() {
               />
               <button
                 type="submit"
-                disabled={!inputMessage.trim() || sending}
+                disabled={!inputMessage.trim()}
                 className="p-2 rounded-xl bg-primary hover:bg-primary/90 text-white disabled:opacity-40 transition-colors shadow-subtle shrink-0"
               >
-                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                <Send className="h-4 w-4" />
               </button>
             </form>
           </>

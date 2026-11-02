@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { TaskStatus } from './KanbanColumn';
+import { createClient } from '@/lib/supabase/client';
 
 function formatSafeDate(dateVal: any, pattern: string = 'MMM d, h:mm a'): string {
   if (!dateVal) return '';
@@ -55,7 +56,6 @@ export function TaskDrawer({
   const [newComment, setNewComment] = useState('');
   const [newChecklistTitle, setNewChecklistTitle] = useState('');
   const [conflictError, setConflictError] = useState<string | null>(null);
-  const [submittingComment, setSubmittingComment] = useState(false);
   const [deletingTask, setDeletingTask] = useState(false);
   const [addingChecklist, setAddingChecklist] = useState(false);
   const [actioningChecklistId, setActioningChecklistId] = useState<string | null>(null);
@@ -134,6 +134,45 @@ export function TaskDrawer({
 
     return () => {
       isMounted = false;
+    };
+  }, [taskId]);
+
+  // Realtime subscription for task comments
+  useEffect(() => {
+    if (!taskId) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`realtime_task_comments_${taskId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'task_comments',
+          filter: `task_id=eq.${taskId}`,
+        },
+        async () => {
+          try {
+            const res = await fetch(`/api/v1/tasks/${taskId}/comments`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.comments) {
+                setTask((prev: any) => {
+                  if (!prev) return prev;
+                  const pending = (prev.comments || []).filter(
+                    (c: any) => String(c.id).startsWith('temp-') && !data.comments.some((s: any) => s.content === c.content)
+                  );
+                  return { ...prev, comments: [...data.comments, ...pending] };
+                });
+              }
+            }
+          } catch {}
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
     };
   }, [taskId]);
 
@@ -321,29 +360,47 @@ export function TaskDrawer({
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newComment.trim() || submittingComment) return;
+    const content = newComment.trim();
+    if (!content || !task?.id) return;
 
-    setSubmittingComment(true);
+    setNewComment('');
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const optimisticComment = {
+      id: tempId,
+      content,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      author: {
+        id: currentUserId || 'self',
+        full_name: 'You',
+        avatar_url: null,
+      },
+    };
+
+    setTask((prev: any) => ({
+      ...prev,
+      comments: [...(prev?.comments || []), optimisticComment],
+    }));
+
     try {
       const res = await fetch(`/api/v1/tasks/${task.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: newComment.trim() }),
+        body: JSON.stringify({ content }),
       });
 
       if (res.ok) {
         const data = await res.json();
-        setTask((prev: any) => ({
-          ...prev,
-          comments: [...(prev.comments || []), data.comment],
-        }));
-        setNewComment('');
-        onTaskUpdated();
+        if (data.comment) {
+          setTask((prev: any) => ({
+            ...prev,
+            comments: (prev?.comments || []).map((c: any) => (c.id === tempId ? data.comment : c)),
+          }));
+          onTaskUpdated();
+        }
       }
     } catch (err) {
       console.error(err);
-    } finally {
-      setSubmittingComment(false);
     }
   };
 
@@ -853,15 +910,11 @@ export function TaskDrawer({
                   />
                   <button
                     type="submit"
-                    disabled={submittingComment || !newComment.trim()}
+                    disabled={!newComment.trim()}
                     className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-medium shadow-subtle transition-colors disabled:opacity-50"
                   >
-                    {submittingComment ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Send className="h-3 w-3" />
-                    )}
-                    <span>{submittingComment ? 'Sending...' : 'Send'}</span>
+                    <Send className="h-3 w-3" />
+                    <span>Send</span>
                   </button>
                 </form>
               </div>

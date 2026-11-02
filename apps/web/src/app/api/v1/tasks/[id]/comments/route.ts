@@ -115,32 +115,34 @@ export async function POST(
       return NextResponse.json({ error: 'COMMENT_FAILED', message: insertErr.message }, { status: 500 });
     }
 
-    // Record activity
-    await supabase.from('task_activity').insert({
-      task_id: taskId,
-      actor_id: user.id,
-      action: 'task.commented',
-      details: { commentId: comment.id },
-    });
-
-    // Notify other assignees on this task
-    const { data: assignees } = await supabase
-      .from('task_assignees')
-      .select('user_id')
-      .eq('task_id', taskId)
-      .neq('user_id', user.id);
-
-    if (assignees && assignees.length > 0) {
-      const notifs = assignees.map((a: any) => ({
-        user_id: a.user_id,
+    // Record activity and notify assignees concurrently
+    await Promise.allSettled([
+      supabase.from('task_activity').insert({
+        task_id: taskId,
         actor_id: user.id,
-        type: 'task_comment',
-        title: `New comment on ${task.task_key}`,
-        body: validated.content.slice(0, 100),
-        link_url: `/projects/${task.project_id}/board?task=${task.id}`,
-      }));
-      await supabase.from('notifications').insert(notifs);
-    }
+        action: 'task.commented',
+        details: { commentId: comment.id },
+      }),
+      (async () => {
+        const { data: assignees } = await supabase
+          .from('task_assignees')
+          .select('user_id')
+          .eq('task_id', taskId)
+          .neq('user_id', user.id);
+
+        if (assignees && assignees.length > 0) {
+          const notifs = assignees.map((a: any) => ({
+            user_id: a.user_id,
+            actor_id: user.id,
+            type: 'task_comment',
+            title: `New comment on ${task.task_key}`,
+            body: validated.content.slice(0, 100),
+            link_url: `/projects/${task.project_id}/board?task=${task.id}`,
+          }));
+          await supabase.from('notifications').insert(notifs);
+        }
+      })(),
+    ]);
 
     return NextResponse.json({
       comment: {
