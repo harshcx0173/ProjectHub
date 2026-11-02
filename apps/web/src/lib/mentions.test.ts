@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isUserMentioned, highlightMentionsHtml } from './mentions';
+import { isUserMentioned, highlightMentionsHtml, getMentionNotificationTitle } from './mentions';
 
 describe('isUserMentioned', () => {
   const user = {
@@ -57,5 +57,53 @@ describe('highlightMentionsHtml', () => {
     const html = highlightMentionsHtml('Hello @Suresh please check', 'Harsh Mevada');
     expect(html).toContain('bg-primary/10');
     expect(html).toContain('@Suresh');
+  });
+});
+
+describe('getMentionNotificationTitle', () => {
+  const recipient = { id: 'u1', fullName: 'Harsh Mevada', email: 'harsh@example.com' };
+
+  it('returns "<Sender> mentioned you" when directly mentioned', () => {
+    const res = getMentionNotificationTitle(
+      'Hey @{Harsh Mevada} please review',
+      recipient,
+      'Test User',
+      'Message from Test User'
+    );
+    expect(res.title).toBe('Test User mentioned you');
+    expect(res.isMention).toBe(true);
+  });
+
+  it('returns "<Sender> mentioned @everyone" when broadcast used', () => {
+    const res = getMentionNotificationTitle(
+      'Attention @everyone call starting',
+      recipient,
+      'Test User',
+      'Message from Test User'
+    );
+    expect(res.title).toBe('Test User mentioned @everyone');
+    expect(res.isMention).toBe(true);
+  });
+
+  it('returns "<Sender> mentioned @all" when @all used', () => {
+    const res = getMentionNotificationTitle(
+      'Hello @all please note',
+      recipient,
+      'Test User',
+      'Message from Test User'
+    );
+    expect(res.title).toBe('Test User mentioned @all');
+    expect(res.isMention).toBe(true);
+  });
+
+  it('returns fallback title when user is not mentioned', () => {
+    const res = getMentionNotificationTitle(
+      'General update without mentions',
+      recipient,
+      'Test User',
+      'Message from Test User'
+    );
+    expect(res.title).toBe('Message from Test User');
+    expect(res.isMention).toBe(false);
   });
 });

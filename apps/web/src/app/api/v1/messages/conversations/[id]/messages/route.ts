@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getMentionNotificationTitle } from '@/lib/mentions';
 
 export async function GET(
   _request: NextRequest,
@@ -155,20 +156,38 @@ export async function POST(
       (async () => {
         const { data: otherMembers } = await supabase
           .from('conversation_members')
-          .select('user_id')
+          .select(`
+            user_id,
+            profiles (
+              id,
+              full_name
+            )
+          `)
           .eq('conversation_id', conversationId)
           .neq('user_id', user.id);
 
         if (otherMembers && otherMembers.length > 0) {
           const senderName = (message.profiles as any)?.full_name || 'A team member';
-          const notifs = otherMembers.map((m: any) => ({
-            user_id: m.user_id,
-            actor_id: user.id,
-            type: 'mention',
-            title: `Message from ${senderName}`,
-            body: content.slice(0, 100),
-            link_url: `/messages?id=${conversationId}`,
-          }));
+          const notifs = otherMembers.map((m: any) => {
+            const recipientTarget = {
+              id: m.user_id,
+              fullName: (m.profiles as any)?.full_name || '',
+            };
+            const { title } = getMentionNotificationTitle(
+              content,
+              recipientTarget,
+              senderName,
+              `Message from ${senderName}`
+            );
+            return {
+              user_id: m.user_id,
+              actor_id: user.id,
+              type: 'mention',
+              title,
+              body: content.slice(0, 150),
+              link_url: `/messages?id=${conversationId}`,
+            };
+          });
           await supabase.from('notifications').insert(notifs);
         }
       })(),

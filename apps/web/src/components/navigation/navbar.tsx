@@ -89,9 +89,50 @@ export function Navbar({
 
     checkNotifications();
     const interval = setInterval(checkNotifications, 15000);
+
+    // Instant Realtime notification push delivery
+    const supabase = createClient();
+    let notifChannel: any = null;
+
+    if (userProfile?.id) {
+      notifChannel = supabase
+        .channel(`realtime_user_notifications_${userProfile.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${userProfile.id}`,
+          },
+          (payload) => {
+            const newNotif = payload.new as any;
+            if (newNotif) {
+              setUnreadCount((prev) => prev + 1);
+              if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+                try {
+                  const pushNotif = new Notification(newNotif.title, {
+                    body: newNotif.body,
+                    icon: '/favicon.ico',
+                  });
+                  pushNotif.onclick = () => {
+                    window.focus();
+                    if (newNotif.link_url) router.push(newNotif.link_url);
+                  };
+                } catch {}
+              }
+            }
+          }
+        )
+        .subscribe();
+    }
+
     return () => {
       isMounted = false;
       clearInterval(interval);
+      if (notifChannel) {
+        supabase.removeChannel(notifChannel);
+      }
     };
   }, [router]);
 

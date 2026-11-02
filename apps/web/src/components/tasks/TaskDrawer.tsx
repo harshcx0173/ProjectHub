@@ -19,7 +19,7 @@ import {
 import { format } from 'date-fns';
 import { TaskStatus } from './KanbanColumn';
 import { createClient } from '@/lib/supabase/client';
-import { renderMessageWithMentions } from '@/lib/mentions';
+import { renderMessageWithMentions, isUserMentioned } from '@/lib/mentions';
 import { MentionCandidate } from '@/lib/mention-suggestions';
 import { MentionSuggestionsDropdown, useMentionSuggestions } from '@/components/chat/MentionSuggestionsDropdown';
 
@@ -945,21 +945,38 @@ export function TaskDrawer({
               <div className="space-y-3">
                 {/* Comments list */}
                 <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
-                  {(task.comments || []).map((c: any) => (
-                    <div key={c.id} className="p-2.5 rounded-lg bg-gray-50 border border-border space-y-1">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-semibold text-gray-800">
-                          {c.author?.full_name || 'Team Member'}
-                        </span>
-                        <span className="text-gray-400">
-                          {formatSafeDate(c.createdAt || c.created_at)}
-                        </span>
+                  {(task.comments || []).map((c: any) => {
+                    const isMentioned = isUserMentioned(c.content, { fullName: currentUserName, id: currentUserId });
+                    return (
+                      <div
+                        key={c.id}
+                        className={`p-2.5 rounded-lg border space-y-1 transition-all ${
+                          isMentioned
+                            ? 'bg-amber-50/70 border-amber-300 border-l-4 border-l-amber-500 shadow-2xs'
+                            : 'bg-gray-50 border-border'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[11px]">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-gray-800">
+                              {c.author?.full_name || 'Team Member'}
+                            </span>
+                            {isMentioned && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 text-[9px] font-bold">
+                                @ Mentioned
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-gray-400">
+                            {formatSafeDate(c.createdAt || c.created_at)}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-700 whitespace-pre-wrap">
+                          {renderMessageWithMentions(c.content, currentUserName)}
+                        </div>
                       </div>
-                      <div className="text-xs text-gray-700 whitespace-pre-wrap">
-                        {renderMessageWithMentions(c.content, currentUserName)}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {(task.comments || []).length === 0 && (
                     <p className="text-center text-xs text-gray-400 py-4">No comments yet.</p>

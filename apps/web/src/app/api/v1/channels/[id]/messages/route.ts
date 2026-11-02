@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { checkUserPermission } from '@/lib/permissions';
+import { getMentionNotificationTitle } from '@/lib/mentions';
 
 export async function GET(
   _request: NextRequest,
@@ -104,10 +105,10 @@ export async function POST(
       return NextResponse.json({ error: 'VALIDATION_ERROR', message: 'Message content cannot be empty' }, { status: 400 });
     }
 
-    // Get project id from channel
+    // Get project id and channel name
     const { data: channel, error: chanErr } = await supabase
       .from('project_channels')
-      .select('project_id')
+      .select('project_id, name')
       .eq('id', channelId)
       .single();
 
@@ -146,6 +147,45 @@ export async function POST(
 
     if (insertErr) {
       return NextResponse.json({ error: 'INSERT_FAILED', message: insertErr.message }, { status: 500 });
+    }
+
+    // Notify other project members about the message or mention
+    const { data: projectMembers } = await supabase
+      .from('project_members')
+      .select(`
+        user_id,
+        profiles (
+          id,
+          full_name
+        )
+      `)
+      .eq('project_id', channel.project_id)
+      .neq('user_id', user.id);
+
+    if (projectMembers && projectMembers.length > 0) {
+      const senderName = (message.profiles as any)?.full_name || 'A team member';
+      const channelName = channel.name || 'general';
+      const notifs = projectMembers.map((m: any) => {
+        const recipientTarget = {
+          id: m.user_id,
+          fullName: (m.profiles as any)?.full_name || '',
+        };
+        const { title, isMention } = getMentionNotificationTitle(
+          content,
+          recipientTarget,
+          senderName,
+          `${senderName} in #${channelName}`
+        );
+        return {
+          user_id: m.user_id,
+          actor_id: user.id,
+          type: isMention ? 'mention' : 'system',
+          title,
+          body: content.slice(0, 150),
+          link_url: `/projects/${channel.project_id}/board`,
+        };
+      });
+      await supabase.from('notifications').insert(notifs);
     }
 
     return NextResponse.json({

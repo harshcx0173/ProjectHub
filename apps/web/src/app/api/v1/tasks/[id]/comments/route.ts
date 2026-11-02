@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createTaskCommentSchema } from '@project-hub/shared';
+import { getMentionNotificationTitle } from '@/lib/mentions';
 
 export async function GET(
   _request: NextRequest,
@@ -126,19 +127,67 @@ export async function POST(
       (async () => {
         const { data: assignees } = await supabase
           .from('task_assignees')
-          .select('user_id')
+          .select(`
+            user_id,
+            profiles (
+              id,
+              full_name
+            )
+          `)
           .eq('task_id', taskId)
           .neq('user_id', user.id);
 
-        if (assignees && assignees.length > 0) {
-          const notifs = assignees.map((a: any) => ({
-            user_id: a.user_id,
-            actor_id: user.id,
-            type: 'task_comment',
-            title: `New comment on ${task.task_key}`,
-            body: validated.content.slice(0, 100),
-            link_url: `/projects/${task.project_id}/board?task=${task.id}`,
-          }));
+        const { data: projectMembers } = await supabase
+          .from('project_members')
+          .select(`
+            user_id,
+            profiles (
+              id,
+              full_name
+            )
+          `)
+          .eq('project_id', task.project_id)
+          .neq('user_id', user.id);
+
+        const candidateMap = new Map<string, any>();
+        (assignees || []).forEach((a: any) => candidateMap.set(a.user_id, a));
+        (projectMembers || []).forEach((m: any) => {
+          if (!candidateMap.has(m.user_id)) {
+            candidateMap.set(m.user_id, m);
+          }
+        });
+
+        const senderName = (comment.profiles as any)?.full_name || 'A team member';
+        const notifs: any[] = [];
+
+        candidateMap.forEach((m) => {
+          const recipientTarget = {
+            id: m.user_id,
+            fullName: (m.profiles as any)?.full_name || '',
+          };
+          const { title, isMention } = getMentionNotificationTitle(
+            validated.content,
+            recipientTarget,
+            senderName,
+            `New comment on ${task.task_key}`
+          );
+
+          const isAssignee = (assignees || []).some((a: any) => a.user_id === m.user_id);
+
+          // Notify if mentioned OR if user is an assigned member on this task
+          if (isMention || isAssignee) {
+            notifs.push({
+              user_id: m.user_id,
+              actor_id: user.id,
+              type: isMention ? 'mention' : 'task_comment',
+              title,
+              body: validated.content.slice(0, 150),
+              link_url: `/projects/${task.project_id}/board?task=${task.id}`,
+            });
+          }
+        });
+
+        if (notifs.length > 0) {
           await supabase.from('notifications').insert(notifs);
         }
       })(),

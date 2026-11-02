@@ -9,10 +9,26 @@ import {
   User,
   Send,
   Check,
+  CheckCheck,
   X,
   Loader2,
+  Phone,
+  Video,
+  UserPlus,
+  Paperclip,
+  Smile,
+  ThumbsUp,
+  Heart,
+  Copy,
+  AtSign,
+  Bold,
+  Italic,
+  Code,
+  FileText,
+  Download,
+  CornerUpLeft,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, isToday, isYesterday } from 'date-fns';
 import { createClient } from '@/lib/supabase/client';
 import { renderMessageWithMentions, isUserMentioned } from '@/lib/mentions';
 import { MentionCandidate } from '@/lib/mention-suggestions';
@@ -70,6 +86,36 @@ export default function MessagesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<{ id: string; fullName: string; email?: string } | null>(null);
+
+  // Teams Chat tabs & interaction state
+  const [activeHeaderTab, setActiveHeaderTab] = useState<'chat' | 'files'>('chat');
+  const [typingUsers, setTypingUsers] = useState<{ id: string; name: string }[]>([]);
+  const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
+  const [messageReactions, setMessageReactions] = useState<Record<string, Record<string, number>>>({});
+  const [replyingTo, setReplyingTo] = useState<MessageItem | null>(null);
+  const [sharedFiles, setSharedFiles] = useState<
+    { id: string; name: string; size: string; type: string; date: string; author: string }[]
+  >([
+    {
+      id: 'f1',
+      name: 'Sprint_Kickoff_Specs.pdf',
+      size: '2.4 MB',
+      type: 'pdf',
+      date: 'Today at 10:30 AM',
+      author: 'Harsh Mevada',
+    },
+    {
+      id: 'f2',
+      name: 'Teams_Architecture_Diagram.png',
+      size: '840 KB',
+      type: 'image',
+      date: 'Yesterday at 4:15 PM',
+      author: 'Test Member User',
+    },
+  ]);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // New Chat Modal state
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
@@ -361,11 +407,141 @@ export default function MessagesPage() {
       .finally(() => setLoadingUsers(false));
   }, [isNewChatOpen]);
 
+  // Realtime typing indicator channel
+  useEffect(() => {
+    if (!selectedConvId) return;
+    const channel = supabase
+      .channel(`realtime_typing_${selectedConvId}`)
+      .on('broadcast', { event: 'typing' }, (payload) => {
+        const { userId, userName } = (payload.payload || {}) as any;
+        if (userId && userId !== currentUserIdRef.current) {
+          setTypingUsers((prev) => {
+            if (prev.some((u) => u.id === userId)) return prev;
+            return [...prev, { id: userId, name: userName || 'Colleague' }];
+          });
+          setTimeout(() => {
+            setTypingUsers((prev) => prev.filter((u) => u.id !== userId));
+          }, 3000);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedConvId, supabase]);
+
+  // Format date grouping divider (Teams style)
+  const formatTeamsDateDivider = (dateStr: string): string => {
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      if (isToday(d)) return 'Today';
+      if (isYesterday(d)) return 'Yesterday';
+      return format(d, 'EEEE, MMMM d, yyyy');
+    } catch {
+      return dateStr;
+    }
+  };
+
+  // Broadcast typing event debounced
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInputMessage(e.target.value);
+    if (selectedConvId && currentUserIdRef.current && currentUserRef.current?.fullName) {
+      if (!typingTimeoutRef.current) {
+        const channel = supabase.channel(`realtime_typing_${selectedConvId}`);
+        channel.send({
+          type: 'broadcast',
+          event: 'typing',
+          payload: {
+            userId: currentUserIdRef.current,
+            userName: currentUserRef.current.fullName,
+          },
+        });
+        typingTimeoutRef.current = setTimeout(() => {
+          typingTimeoutRef.current = null;
+        }, 2500);
+      }
+    }
+  };
+
+  // Teams Composer Formatting Tools
+  const handleFormatBold = () => {
+    setInputMessage((prev) => `${prev}**bold text** `);
+    chatInputRef.current?.focus();
+  };
+
+  const handleFormatItalic = () => {
+    setInputMessage((prev) => `${prev}*italic text* `);
+    chatInputRef.current?.focus();
+  };
+
+  const handleFormatCode = () => {
+    setInputMessage((prev) => `${prev}\`code snippet\` `);
+    chatInputRef.current?.focus();
+  };
+
+  const handleTriggerMention = () => {
+    setInputMessage((prev) => (prev.endsWith(' ') || prev === '' ? `${prev}@` : `${prev} @`));
+    chatInputRef.current?.focus();
+  };
+
+  // Teams Quick Reaction Toggler
+  const handleToggleReaction = (msgId: string, reaction: 'thumbsUp' | 'heart' | 'smile') => {
+    setMessageReactions((prev) => {
+      const existing = prev[msgId] || {};
+      const count = existing[reaction] || 0;
+      return {
+        ...prev,
+        [msgId]: {
+          ...existing,
+          [reaction]: count > 0 ? 0 : 1,
+        },
+      };
+    });
+  };
+
+  // Copy message to clipboard with visual feedback
+  const handleCopyMessage = (msg: MessageItem) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(msg.content);
+      setCopiedMsgId(msg.id);
+      setTimeout(() => {
+        setCopiedMsgId((curr) => (curr === msg.id ? null : curr));
+      }, 2000);
+    }
+  };
+
+  // File upload simulation for Teams Files tab
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const newFile = {
+      id: `file-${Date.now()}`,
+      name: file.name,
+      size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+      type: file.type.includes('image') ? 'image' : 'document',
+      date: 'Just now',
+      author: currentUser?.fullName || 'You',
+    };
+
+    setSharedFiles((prev) => [newFile, ...prev]);
+    // Notify in chat about the shared file
+    setInputMessage((prev) => `${prev} [Attachment: ${file.name}] `);
+    e.target.value = '';
+  };
+
   // Send Message with instant optimistic UI update
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const content = inputMessage.trim();
+    let content = inputMessage.trim();
     if (!content || !selectedConvId) return;
+
+    if (replyingTo) {
+      content = `> Replying to ${replyingTo.senderName}: "${replyingTo.content.slice(0, 60)}..."\n\n${content}`;
+      setReplyingTo(null);
+    }
 
     // Reset input immediately so user can type next message without blocking
     setInputMessage('');
@@ -761,136 +937,509 @@ export default function MessagesPage() {
       <div className="flex-1 flex flex-col bg-white">
         {selectedConversation ? (
           <>
-            {/* Active Header */}
+            {/* Teams Active Header */}
             <div className="h-14 px-6 border-b border-border flex items-center justify-between shrink-0 bg-white">
               <div className="flex items-center gap-3">
-                {selectedConversation.type === 'group' ? (
-                  <div className="h-8 w-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-xs">
-                    <Users className="h-4 w-4" />
-                  </div>
-                ) : (
-                  <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
-                    {selectedConversation.name?.[0]?.toUpperCase() || 'U'}
-                  </div>
-                )}
+                <div className="relative shrink-0">
+                  {selectedConversation.type === 'group' ? (
+                    <div className="h-9 w-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-xs border border-purple-200">
+                      <Users className="h-4 w-4" />
+                    </div>
+                  ) : (
+                    <div className="h-9 w-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs border border-primary/20">
+                      {selectedConversation.name?.[0]?.toUpperCase() || 'U'}
+                    </div>
+                  )}
+                  {selectedConversation.type === 'direct' && (
+                    <span
+                      className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white"
+                      title="Available"
+                    />
+                  )}
+                </div>
                 <div>
-                  <h2 className="text-xs font-bold text-gray-900 leading-tight">
-                    {selectedConversation.name}
-                  </h2>
-                  <p className="text-[11px] text-gray-400 leading-tight">
-                    {selectedConversation.subtitle}
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xs font-bold text-gray-900 leading-tight">
+                      {selectedConversation.name}
+                    </h2>
+                    {selectedConversation.type === 'group' && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                        Group
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-gray-500 flex items-center gap-1.5 leading-tight mt-0.5">
+                    {selectedConversation.type === 'direct' ? (
+                      <>
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        <span>Available • Teams Chat</span>
+                      </>
+                    ) : (
+                      <span>{selectedConversation.membersCount} participants • Teams Group</span>
+                    )}
                   </p>
                 </div>
               </div>
 
-              {selectedConversation.type === 'group' && (
-                <div className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 px-2.5 py-1 rounded-lg border border-border">
-                  <Users className="h-3.5 w-3.5 text-gray-400" />
-                  <span>{selectedConversation.membersCount} participants</span>
-                </div>
-              )}
+              {/* Teams Header Tabs: Chat & Files */}
+              <div className="flex items-center gap-1 self-stretch pt-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveHeaderTab('chat')}
+                  className={`h-full px-3 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition-colors ${
+                    activeHeaderTab === 'chat'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  <span>Chat</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveHeaderTab('files')}
+                  className={`h-full px-3 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition-colors ${
+                    activeHeaderTab === 'files'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  <span>Files ({sharedFiles.length})</span>
+                </button>
+              </div>
+
+              {/* Teams Header Actions */}
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => alert('Starting video call...')}
+                  className="p-1.5 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+                  title="Start video call"
+                  aria-label="Start video call"
+                >
+                  <Video className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => alert('Starting audio call...')}
+                  className="p-1.5 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+                  title="Start audio call"
+                  aria-label="Start audio call"
+                >
+                  <Phone className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsNewChatOpen(true)}
+                  className="p-1.5 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+                  title="Add members or start new chat"
+                  aria-label="Add members"
+                >
+                  <UserPlus className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
-            {/* Messages Thread */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-[#FAF9F6]">
-              {loadingMessages ? (
-                <div className="flex items-center justify-center h-full text-xs text-gray-400">
-                  <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                  <span>Loading message thread...</span>
-                </div>
-              ) : messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center text-gray-400">
-                  <MessageSquare className="h-8 w-8 mb-2 text-gray-300" />
-                  <p className="text-xs font-semibold text-gray-700">No messages yet</p>
-                  <p className="text-[11px] text-gray-500">Send a message to start the conversation.</p>
-                </div>
-              ) : (
-                messages.map((m) => {
-                  return (
-                    <div
-                      key={m.id}
-                      className={`flex items-start gap-2.5 ${m.isSelf ? 'justify-end' : 'justify-start'}`}
+            {/* View Mode: Files Tab or Chat Stream */}
+            {activeHeaderTab === 'files' ? (
+              <div className="flex-1 overflow-y-auto p-6 bg-white space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900">Shared Files</h3>
+                    <p className="text-xs text-gray-500">
+                      Documents, images, and attachments shared in this conversation
+                    </p>
+                  </div>
+                  <div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={handleFileUpload}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-subtle transition-colors"
                     >
-                      {!m.isSelf && (
-                        <div className="h-7 w-7 rounded-lg bg-primary/10 text-primary font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5 border border-primary/20">
-                          {m.senderName?.[0]?.toUpperCase() || 'M'}
-                        </div>
-                      )}
+                      <Paperclip className="h-3.5 w-3.5" />
+                      <span>Share File</span>
+                    </button>
+                  </div>
+                </div>
 
-                      <div className={`max-w-md ${m.isSelf ? 'items-end' : 'items-start'} flex flex-col`}>
-                        {!m.isSelf && (
-                          <div className="flex items-center gap-1.5 mb-1 px-1">
-                            <span className="text-[11px] font-semibold text-gray-900">{m.senderName}</span>
-                            <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.2 rounded bg-gray-100 text-gray-500">
-                              {m.senderRole}
-                            </span>
+                {sharedFiles.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center p-12 text-center text-gray-400 border border-dashed border-gray-200 rounded-2xl">
+                    <FileText className="h-10 w-10 text-gray-300 mb-2" />
+                    <p className="text-xs font-semibold text-gray-700">No files shared yet</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5 max-w-xs">
+                      Files uploaded or sent in this chat will automatically appear here for easy access.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="border border-border rounded-xl overflow-hidden divide-y divide-gray-100">
+                    {sharedFiles.map((f) => (
+                      <div
+                        key={f.id}
+                        className="p-3 flex items-center justify-between hover:bg-gray-50/60 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                            <FileText className="h-4 w-4" />
                           </div>
-                        )}
-
-                        <div
-                          className={`rounded-2xl px-3.5 py-2 text-xs leading-relaxed shadow-xs ${
-                            m.isSelf
-                              ? 'bg-primary text-white rounded-br-xs'
-                              : 'bg-white border border-border text-gray-900 rounded-bl-xs'
-                          }`}
+                          <div>
+                            <p className="text-xs font-semibold text-gray-900">{f.name}</p>
+                            <p className="text-[10px] text-gray-400">
+                              {f.size} • Shared by {f.author} • {f.date}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => alert(`Downloading ${f.name}`)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-gray-100 transition-colors"
+                          title="Download file"
+                          aria-label="Download file"
                         >
-                          <div className="whitespace-pre-wrap break-words">
-                            {renderMessageWithMentions(m.content, currentUser?.fullName)}
-                          </div>
-                        </div>
-
-                        <span className="text-[10px] text-gray-400 mt-1 px-1">
-                          {format(new Date(m.createdAt), 'h:mm a')}
-                        </span>
+                          <Download className="h-4 w-4" />
+                        </button>
                       </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                {/* Messages Thread (Teams Layout with Date Dividers & Mention Highlights) */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-3.5 bg-[#FAF9F6]">
+                  {loadingMessages ? (
+                    <div className="flex items-center justify-center h-full text-xs text-gray-400">
+                      <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                      <span>Loading message thread...</span>
                     </div>
-                  );
-                })
-              )}
-              <div ref={messagesEndRef} />
-            </div>
+                  ) : messages.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center text-gray-400">
+                      <MessageSquare className="h-8 w-8 mb-2 text-gray-300" />
+                      <p className="text-xs font-semibold text-gray-700">No messages yet</p>
+                      <p className="text-[11px] text-gray-500">Send a message to start the conversation.</p>
+                    </div>
+                  ) : (
+                    messages.map((m, idx) => {
+                      const prevMsg = idx > 0 ? messages[idx - 1] : null;
+                      const isDifferentDay =
+                        !prevMsg ||
+                        new Date(prevMsg.createdAt).toDateString() !==
+                          new Date(m.createdAt).toDateString();
+                      const dateGroupLabel = isDifferentDay
+                        ? formatTeamsDateDivider(m.createdAt)
+                        : null;
+                      const isMentioned = currentUser
+                        ? isUserMentioned(m.content, currentUser)
+                        : false;
+                      const reactions = messageReactions[m.id] || {};
 
-            {/* Input Bar */}
-            <form
-              onSubmit={(e) => {
-                if (mention.isOpen) {
-                  e.preventDefault();
-                  return;
-                }
-                handleSendMessage(e);
-              }}
-              className="p-3 bg-white border-t border-border flex items-center gap-2 relative"
-            >
-              <MentionSuggestionsDropdown
-                isOpen={mention.isOpen}
-                query={mention.query}
-                selectedIndex={mention.selectedIndex}
-                setSelectedIndex={mention.setSelectedIndex}
-                filteredCandidates={mention.filteredCandidates}
-                onSelect={mention.selectCandidate}
-                onClose={mention.close}
-              />
-              <input
-                ref={chatInputRef}
-                type="text"
-                value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                onKeyDown={(e) => {
-                  if (mention.handleKeyDown(e)) {
-                    return;
-                  }
-                }}
-                placeholder="Type a message... (Press Enter to send, type @ to mention)"
-                className="flex-1 px-3.5 py-2 rounded-xl border border-border bg-gray-50/50 text-xs text-gray-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-              <button
-                type="submit"
-                disabled={!inputMessage.trim()}
-                className="p-2 rounded-xl bg-primary hover:bg-primary/90 text-white disabled:opacity-40 transition-colors shadow-subtle shrink-0"
-              >
-                <Send className="h-4 w-4" />
-              </button>
-            </form>
+                      return (
+                        <React.Fragment key={m.id}>
+                          {/* Centered Teams Date Divider */}
+                          {dateGroupLabel && (
+                            <div className="relative flex items-center justify-center my-4">
+                              <div className="absolute inset-0 flex items-center">
+                                <div className="w-full border-t border-gray-200" />
+                              </div>
+                              <span className="relative bg-[#FAF9F6] px-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                                {dateGroupLabel}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Message Item */}
+                          <div
+                            className={`group relative flex items-start gap-2.5 ${
+                              m.isSelf ? 'justify-end' : 'justify-start'
+                            }`}
+                          >
+                            {/* Floating Hover Action Toolbar (Teams Style) */}
+                            <div
+                              className={`opacity-0 group-hover:opacity-100 transition-opacity absolute -top-3.5 ${
+                                m.isSelf ? 'right-4' : 'left-8'
+                              } bg-white border border-gray-200 shadow-sm rounded-lg flex items-center p-0.5 gap-0.5 z-10`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => handleToggleReaction(m.id, 'thumbsUp')}
+                                className={`p-1 rounded hover:bg-gray-100 text-xs transition-colors ${
+                                  reactions['thumbsUp']
+                                    ? 'text-primary font-bold bg-primary/10'
+                                    : 'text-gray-500 hover:text-gray-900'
+                                }`}
+                                title="Thumbs Up"
+                              >
+                                <ThumbsUp className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleReaction(m.id, 'heart')}
+                                className={`p-1 rounded hover:bg-gray-100 text-xs transition-colors ${
+                                  reactions['heart']
+                                    ? 'text-red-500 font-bold bg-red-50'
+                                    : 'text-gray-500 hover:text-gray-900'
+                                }`}
+                                title="Heart"
+                              >
+                                <Heart className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleReaction(m.id, 'smile')}
+                                className={`p-1 rounded hover:bg-gray-100 text-xs transition-colors ${
+                                  reactions['smile']
+                                    ? 'text-amber-500 font-bold bg-amber-50'
+                                    : 'text-gray-500 hover:text-gray-900'
+                                }`}
+                                title="Smile"
+                              >
+                                <Smile className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReplyingTo(m);
+                                  chatInputRef.current?.focus();
+                                }}
+                                className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-900 text-xs transition-colors"
+                                title="Quote Reply"
+                              >
+                                <CornerUpLeft className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyMessage(m)}
+                                className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-900 text-xs transition-colors"
+                                title="Copy message"
+                              >
+                                {copiedMsgId === m.id ? (
+                                  <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                ) : (
+                                  <Copy className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            </div>
+
+                            {!m.isSelf && (
+                              <div className="h-7 w-7 rounded-lg bg-primary/10 text-primary font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5 border border-primary/20">
+                                {m.senderName?.[0]?.toUpperCase() || 'M'}
+                              </div>
+                            )}
+
+                            <div
+                              className={`max-w-md ${
+                                m.isSelf ? 'items-end' : 'items-start'
+                              } flex flex-col`}
+                            >
+                              {!m.isSelf && (
+                                <div className="flex items-center gap-1.5 mb-1 px-1">
+                                  <span className="text-[11px] font-semibold text-gray-900">
+                                    {m.senderName}
+                                  </span>
+                                  <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.2 rounded bg-gray-100 text-gray-500">
+                                    {m.senderRole}
+                                  </span>
+                                  {isMentioned && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                                      <AtSign className="h-2.5 w-2.5" /> Mentioned you
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Message bubble with Teams Mention Highlight */}
+                              <div
+                                className={`rounded-2xl px-3.5 py-2 text-xs leading-relaxed shadow-xs transition-all ${
+                                  isMentioned
+                                    ? 'border-l-4 border-amber-500 bg-amber-50/80 border-amber-200 text-gray-900 ring-1 ring-amber-300/40 rounded-bl-xs'
+                                    : m.isSelf
+                                    ? 'bg-primary text-white rounded-br-xs'
+                                    : 'bg-white border border-border text-gray-900 rounded-bl-xs'
+                                }`}
+                              >
+                                <div className="whitespace-pre-wrap break-words">
+                                  {renderMessageWithMentions(m.content, currentUser?.fullName)}
+                                </div>
+                              </div>
+
+                              {/* Reactions Counter Row */}
+                              {(reactions['thumbsUp'] ||
+                                reactions['heart'] ||
+                                reactions['smile']) && (
+                                <div className="flex items-center gap-1 mt-1 px-1">
+                                  {reactions['thumbsUp'] ? (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-semibold">
+                                      <ThumbsUp className="h-2.5 w-2.5" /> {reactions['thumbsUp']}
+                                    </span>
+                                  ) : null}
+                                  {reactions['heart'] ? (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-red-50 border border-red-200 text-red-600 text-[10px] font-semibold">
+                                      <Heart className="h-2.5 w-2.5 fill-red-500" />{' '}
+                                      {reactions['heart']}
+                                    </span>
+                                  ) : null}
+                                  {reactions['smile'] ? (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-semibold">
+                                      <Smile className="h-2.5 w-2.5" /> {reactions['smile']}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              )}
+
+                              {/* Timestamp & Delivered Status */}
+                              <div className="flex items-center gap-1 text-[10px] text-gray-400 mt-1 px-1">
+                                <span>{format(new Date(m.createdAt), 'h:mm a')}</span>
+                                {m.isSelf && (
+                                  <span title="Delivered">
+                                    <CheckCheck className="h-3 w-3 text-primary/70 inline" />
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </React.Fragment>
+                      );
+                    })
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                {/* Realtime Typing Indicator */}
+                {typingUsers.length > 0 && (
+                  <div className="px-6 py-1.5 text-xs text-gray-500 flex items-center gap-2 italic bg-white border-t border-gray-100">
+                    <span className="flex gap-1 items-center">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.3s]" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.15s]" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce" />
+                    </span>
+                    <span>
+                      {typingUsers.map((u) => u.name).join(', ')}{' '}
+                      {typingUsers.length > 1 ? 'are' : 'is'} typing...
+                    </span>
+                  </div>
+                )}
+
+                {/* Replying context banner */}
+                {replyingTo && (
+                  <div className="flex items-center justify-between px-4 py-1.5 bg-gray-50 border-t border-border text-xs text-gray-600">
+                    <div className="flex items-center gap-2 truncate">
+                      <CornerUpLeft className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span className="font-semibold text-gray-900">
+                        Replying to {replyingTo.senderName}:
+                      </span>
+                      <span className="truncate italic text-gray-500">{replyingTo.content}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReplyingTo(null)}
+                      className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-700"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Teams Rich Composer Toolbar */}
+                <div className="flex items-center justify-between px-4 py-1.5 bg-gray-50 border-t border-border text-gray-500">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handleFormatBold}
+                      className="p-1 rounded hover:bg-gray-200 hover:text-gray-800 transition-colors"
+                      title="Bold (**text**)"
+                    >
+                      <Bold className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleFormatItalic}
+                      className="p-1 rounded hover:bg-gray-200 hover:text-gray-800 transition-colors"
+                      title="Italic (*text*)"
+                    >
+                      <Italic className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleFormatCode}
+                      className="p-1 rounded hover:bg-gray-200 hover:text-gray-800 transition-colors"
+                      title="Code snippet"
+                    >
+                      <Code className="h-3.5 w-3.5" />
+                    </button>
+                    <div className="h-3.5 w-px bg-gray-300 mx-1" />
+                    <button
+                      type="button"
+                      onClick={handleTriggerMention}
+                      className="p-1 rounded hover:bg-gray-200 hover:text-gray-800 transition-colors flex items-center gap-1 text-xs font-semibold"
+                      title="Mention someone (@)"
+                    >
+                      <AtSign className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-1 rounded hover:bg-gray-200 hover:text-gray-800 transition-colors"
+                      title="Attach file"
+                    >
+                      <Paperclip className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <span className="text-[10px] text-gray-400">
+                    Type <kbd className="px-1 py-0.2 bg-gray-200 rounded text-gray-700">@</kbd> to
+                    mention
+                  </span>
+                </div>
+
+                {/* Teams Input Bar */}
+                <form
+                  onSubmit={(e) => {
+                    if (mention.isOpen) {
+                      e.preventDefault();
+                      return;
+                    }
+                    handleSendMessage(e);
+                  }}
+                  className="p-3 bg-white border-t border-gray-100 flex items-center gap-2 relative"
+                >
+                  <MentionSuggestionsDropdown
+                    isOpen={mention.isOpen}
+                    query={mention.query}
+                    selectedIndex={mention.selectedIndex}
+                    setSelectedIndex={mention.setSelectedIndex}
+                    filteredCandidates={mention.filteredCandidates}
+                    onSelect={mention.selectCandidate}
+                    onClose={mention.close}
+                  />
+                  <input
+                    ref={chatInputRef}
+                    type="text"
+                    value={inputMessage}
+                    onChange={handleInputChange}
+                    onKeyDown={(e) => {
+                      if (mention.handleKeyDown(e)) {
+                        return;
+                      }
+                    }}
+                    placeholder="Type a new message (Press Enter to send, type @ to mention)"
+                    className="flex-1 px-3.5 py-2 rounded-xl border border-border bg-gray-50/50 text-xs text-gray-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary shadow-2xs"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!inputMessage.trim()}
+                    className="p-2 rounded-xl bg-primary hover:bg-primary/90 text-white disabled:opacity-40 transition-colors shadow-subtle shrink-0"
+                    title="Send message"
+                  >
+                    <Send className="h-4 w-4" />
+                  </button>
+                </form>
+              </>
+            )}
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-gray-400">

@@ -60,6 +60,73 @@ export function isUserMentioned(content?: string | null, user?: UserMentionTarge
 }
 
 /**
+ * Checks if a specific user is mentioned directly by name or email (excluding broadcasts).
+ */
+export function isUserMentionedDirectOnly(
+  content?: string | null,
+  user?: UserMentionTarget | null
+): boolean {
+  if (!content || !user) return false;
+  const text = content.toLowerCase();
+
+  const namesToCheck: string[] = [];
+  if (user.fullName) {
+    const full = user.fullName.trim().toLowerCase();
+    if (full) {
+      namesToCheck.push(full);
+      const parts = full.split(/\s+/);
+      if (parts[0] && parts[0].length > 1) {
+        namesToCheck.push(parts[0]);
+      }
+    }
+  }
+
+  if (user.email) {
+    const emailPrefix = user.email.split('@')[0]?.toLowerCase();
+    if (emailPrefix && emailPrefix.length > 1 && !namesToCheck.includes(emailPrefix)) {
+      namesToCheck.push(emailPrefix);
+    }
+  }
+
+  for (const name of namesToCheck) {
+    const esc = escapeRegex(name);
+    const regexBracket = new RegExp(`@\\{${esc}\\}`, 'i');
+    const regexSimple = new RegExp(`@${esc}(\\b|[^a-zA-Z0-9_]|$)`, 'i');
+    if (regexBracket.test(text) || regexSimple.test(text)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Determines the notification title and mention status for a recipient.
+ * E.g.
+ * - If directly mentioned: "${senderName} mentioned you"
+ * - If broadcast mentioned: "${senderName} mentioned @everyone" or "${senderName} mentioned @all"
+ * - Otherwise: fallbackTitle (e.g. "Message from ${senderName}")
+ */
+export function getMentionNotificationTitle(
+  content: string,
+  recipient: UserMentionTarget,
+  senderName: string,
+  fallbackTitle: string
+): { title: string; isMention: boolean } {
+  if (isUserMentionedDirectOnly(content, recipient)) {
+    return { title: `${senderName} mentioned you`, isMention: true };
+  }
+
+  const broadcastMatch = content.match(/@(everyone|all|here|channel)\b/i);
+  if (broadcastMatch && broadcastMatch[1]) {
+    const tag = broadcastMatch[1].toLowerCase();
+    return { title: `${senderName} mentioned @${tag}`, isMention: true };
+  }
+
+  return { title: fallbackTitle, isMention: false };
+}
+
+/**
  * Parses message content and highlights mentions like @{Name} or @Name.
  * If the mention references the current user, it gets extra visual prominence.
  */

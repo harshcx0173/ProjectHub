@@ -767,14 +767,19 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
       <div className="flex-1 p-3 space-y-3.5 overflow-y-auto bg-gray-50/40">
         {displayedMessages.map((m) => {
           const isOwner = currentUserId === m.userId;
+          const isMentioned = isUserMentioned(m.content, { fullName: currentUserName, id: currentUserId || '' });
           const sanitizedContent = DOMPurify.sanitize(highlightMentionsHtml(m.content, currentUserName));
           const parentMsg = m.parentId ? messages.find((p) => p.id === m.parentId) : null;
 
           return (
             <div
               key={m.id}
-              className={`group relative flex items-start gap-2.5 text-xs ${
-                m.isPinned ? 'bg-amber-50/40 p-2 rounded-xl border border-amber-200/50' : ''
+              className={`group relative flex items-start gap-2.5 text-xs transition-all ${
+                isMentioned
+                  ? 'border-l-4 border-amber-500 bg-amber-50/60 p-2 rounded-r-xl shadow-2xs'
+                  : m.isPinned
+                  ? 'bg-amber-50/40 p-2 rounded-xl border border-amber-200/50'
+                  : ''
               }`}
             >
               {/* Avatar */}
@@ -799,6 +804,11 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
                     <span className="font-semibold text-gray-900 text-[11px]">
                       {m.author?.full_name || 'Member'}
                     </span>
+                    {isMentioned && (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 text-[9px] font-bold">
+                        @ Mentioned
+                      </span>
+                    )}
                     <span className="text-[10px] text-gray-400">
                       {format(new Date(m.createdAt), 'h:mm a')}
                     </span>
