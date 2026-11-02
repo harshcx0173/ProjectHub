@@ -16,7 +16,7 @@ export function Badge({ className, variant = 'default', ...props }: BadgeProps) 
     danger: 'bg-red-50 text-red-700 border-red-200',
   };
 
-  return (
+  return ( 
     <span
       className={twMerge(
         clsx(
