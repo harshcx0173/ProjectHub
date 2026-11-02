@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   X,
   Calendar,
@@ -20,6 +20,8 @@ import { format } from 'date-fns';
 import { TaskStatus } from './KanbanColumn';
 import { createClient } from '@/lib/supabase/client';
 import { renderMessageWithMentions } from '@/lib/mentions';
+import { MentionCandidate } from '@/lib/mention-suggestions';
+import { MentionSuggestionsDropdown, useMentionSuggestions } from '@/components/chat/MentionSuggestionsDropdown';
 
 function formatSafeDate(dateVal: any, pattern: string = 'MMM d, h:mm a'): string {
   if (!dateVal) return '';
@@ -76,7 +78,61 @@ export function TaskDrawer({
 
   // Assignees state
   const [projectMembers, setProjectMembers] = useState<any[]>([]);
+  const [allProjectMembers, setAllProjectMembers] = useState<any[]>([]);
   const [showAssigneePicker, setShowAssigneePicker] = useState(false);
+  const commentInputRef = useRef<HTMLInputElement | null>(null);
+
+  const mentionCandidates: MentionCandidate[] = useMemo(() => {
+    const list: MentionCandidate[] = [
+      {
+        id: 'broadcast-all',
+        name: 'all',
+        subtitle: 'Notify all members on this task',
+        isBroadcast: true,
+      },
+      {
+        id: 'broadcast-everyone',
+        name: 'everyone',
+        subtitle: 'Notify everyone on this project',
+        isBroadcast: true,
+      },
+    ];
+
+    // Add assignees first if any
+    (task?.assignees || []).forEach((a: any) => {
+      if (a.id !== currentUserId && !list.some((existing) => existing.id === a.id)) {
+        list.push({
+          id: a.id,
+          name: a.full_name || 'Assignee',
+          avatarUrl: a.avatar_url || null,
+          subtitle: 'Task Assignee',
+        });
+      }
+    });
+
+    // Add all project members
+    allProjectMembers.forEach((m: any) => {
+      const uId = m.userId || m.id;
+      if (uId !== currentUserId && !list.some((existing) => existing.id === uId)) {
+        list.push({
+          id: uId,
+          name: m.fullName || 'Member',
+          avatarUrl: m.avatarUrl || null,
+          subtitle: m.designation || m.projectRole || 'Member',
+          role: m.projectRole || null,
+        });
+      }
+    });
+
+    return list;
+  }, [allProjectMembers, task?.assignees, currentUserId]);
+
+  const mention = useMentionSuggestions({
+    candidates: mentionCandidates,
+    text: newComment,
+    setText: setNewComment,
+    inputRef: commentInputRef,
+  });
 
   // Load task details when taskId changes
   useEffect(() => {
@@ -104,6 +160,7 @@ export function TaskDrawer({
                 .then((r) => r.json())
                 .then((m) => {
                   if (isMounted) {
+                    setAllProjectMembers(m.members || []);
                     setProjectMembers((m.members || []).filter((mem: any) => mem.isAssignable));
                   }
                 })
@@ -367,6 +424,7 @@ export function TaskDrawer({
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (mention.isOpen) return;
     const content = newComment.trim();
     if (!content || !task?.id) return;
 
@@ -909,12 +967,27 @@ export function TaskDrawer({
                 </div>
 
                 {/* Comment composer */}
-                <form onSubmit={handleAddComment} className="flex gap-2">
+                <form onSubmit={handleAddComment} className="flex gap-2 relative">
+                  <MentionSuggestionsDropdown
+                    isOpen={mention.isOpen}
+                    query={mention.query}
+                    selectedIndex={mention.selectedIndex}
+                    setSelectedIndex={mention.setSelectedIndex}
+                    filteredCandidates={mention.filteredCandidates}
+                    onSelect={mention.selectCandidate}
+                    onClose={mention.close}
+                  />
                   <input
+                    ref={commentInputRef}
                     type="text"
-                    placeholder="Write a comment..."
+                    placeholder="Write a comment... (type @ to mention)"
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (mention.handleKeyDown(e)) {
+                        return;
+                      }
+                    }}
                     className="flex-1 text-xs px-3 py-2 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                   <button

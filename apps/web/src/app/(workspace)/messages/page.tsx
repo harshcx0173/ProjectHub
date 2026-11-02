@@ -15,6 +15,8 @@ import {
 import { format } from 'date-fns';
 import { createClient } from '@/lib/supabase/client';
 import { renderMessageWithMentions, isUserMentioned } from '@/lib/mentions';
+import { MentionCandidate } from '@/lib/mention-suggestions';
+import { MentionSuggestionsDropdown, useMentionSuggestions } from '@/components/chat/MentionSuggestionsDropdown';
 
 interface Conversation {
   id: string;
@@ -82,6 +84,7 @@ export default function MessagesPage() {
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const chatInputRef = useRef<HTMLInputElement | null>(null);
   const selectedConvIdRef = useRef<string | null>(selectedConvId);
   const conversationsRef = useRef<Conversation[]>(conversations);
   const currentUserIdRef = useRef<string | null>(currentUserId);
@@ -309,6 +312,26 @@ export default function MessagesPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Pre-load available users for mentions and new chat
+  useEffect(() => {
+    fetch('/api/v1/users')
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data.users)) {
+          setAvailableUsers(
+            data.users.map((u: any) => ({
+              id: u.id,
+              fullName: u.full_name || 'Member',
+              avatarUrl: u.avatar_url || null,
+              designation: u.designation || null,
+              orgRole: u.org_role || 'Member',
+            }))
+          );
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Fetch available users when new chat modal opens
   useEffect(() => {
     if (!isNewChatOpen) return;
@@ -491,6 +514,56 @@ export default function MessagesPage() {
   });
 
   const selectedConversation = conversations.find((c) => c.id === selectedConvId);
+
+  const mentionCandidates: MentionCandidate[] = useMemo(() => {
+    const list: MentionCandidate[] = [];
+    if (selectedConversation?.type === 'group') {
+      list.push({
+        id: 'broadcast-everyone',
+        name: 'everyone',
+        subtitle: 'Notify everyone in this channel',
+        isBroadcast: true,
+      });
+      list.push({
+        id: 'broadcast-all',
+        name: 'all',
+        subtitle: 'Notify all group members',
+        isBroadcast: true,
+      });
+    }
+
+    const convMembers = (selectedConversation?.members || [])
+      .filter((m: any) => m && m.id !== currentUserId)
+      .map((m: any) => ({
+        id: m.id,
+        name: m.full_name || m.fullName || 'Member',
+        avatarUrl: m.avatar_url || m.avatarUrl || null,
+        subtitle: m.designation || m.org_role || m.orgRole || 'Member',
+        role: m.org_role || m.orgRole || null,
+      }));
+
+    list.push(...convMembers);
+
+    const otherUsers = availableUsers
+      .filter((u) => u.id !== currentUserId && !list.some((existing) => existing.id === u.id))
+      .map((u) => ({
+        id: u.id,
+        name: u.fullName,
+        avatarUrl: u.avatarUrl,
+        subtitle: u.designation || u.orgRole || 'Member',
+        role: u.orgRole,
+      }));
+
+    list.push(...otherUsers);
+    return list;
+  }, [selectedConversation, currentUserId, availableUsers]);
+
+  const mention = useMentionSuggestions({
+    candidates: mentionCandidates,
+    text: inputMessage,
+    setText: setInputMessage,
+    inputRef: chatInputRef,
+  });
 
   return (
     <div className="flex-1 flex h-full bg-[#FAF9F6] overflow-hidden select-none">
@@ -779,14 +852,35 @@ export default function MessagesPage() {
 
             {/* Input Bar */}
             <form
-              onSubmit={handleSendMessage}
-              className="p-3 bg-white border-t border-border flex items-center gap-2"
+              onSubmit={(e) => {
+                if (mention.isOpen) {
+                  e.preventDefault();
+                  return;
+                }
+                handleSendMessage(e);
+              }}
+              className="p-3 bg-white border-t border-border flex items-center gap-2 relative"
             >
+              <MentionSuggestionsDropdown
+                isOpen={mention.isOpen}
+                query={mention.query}
+                selectedIndex={mention.selectedIndex}
+                setSelectedIndex={mention.setSelectedIndex}
+                filteredCandidates={mention.filteredCandidates}
+                onSelect={mention.selectCandidate}
+                onClose={mention.close}
+              />
               <input
+                ref={chatInputRef}
                 type="text"
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
-                placeholder="Type a message... (Press Enter to send)"
+                onKeyDown={(e) => {
+                  if (mention.handleKeyDown(e)) {
+                    return;
+                  }
+                }}
+                placeholder="Type a message... (Press Enter to send, type @ to mention)"
                 className="flex-1 px-3.5 py-2 rounded-xl border border-border bg-gray-50/50 text-xs text-gray-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary"
               />
               <button

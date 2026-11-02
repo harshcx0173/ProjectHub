@@ -32,6 +32,8 @@ import DOMPurify from 'dompurify';
 import { format } from 'date-fns';
 import { createClient } from '@/lib/supabase/client';
 import { isUserMentioned, highlightMentionsHtml } from '@/lib/mentions';
+import { MentionCandidate } from '@/lib/mention-suggestions';
+import { MentionSuggestionsDropdown, useMentionSuggestions } from './MentionSuggestionsDropdown';
 
 interface ProjectChatPanelProps {
   projectId: string;
@@ -129,7 +131,56 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
         }
       })
       .catch(console.error);
+
+    fetch(`/api/v1/projects/${projectId}/members`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data.members)) {
+          setProjectMembers(data.members);
+        }
+      })
+      .catch(() => {});
   }, [projectId, supabase]);
+
+  const [projectMembers, setProjectMembers] = useState<any[]>([]);
+
+  const mentionCandidates: MentionCandidate[] = useMemo(() => {
+    const list: MentionCandidate[] = [
+      {
+        id: 'broadcast-channel',
+        name: 'channel',
+        subtitle: 'Notify everyone in #general',
+        isBroadcast: true,
+      },
+      {
+        id: 'broadcast-everyone',
+        name: 'everyone',
+        subtitle: 'Notify all project members',
+        isBroadcast: true,
+      },
+    ];
+
+    projectMembers
+      .filter((m: any) => m && m.userId !== currentUserId)
+      .forEach((m: any) => {
+        list.push({
+          id: m.userId || m.id,
+          name: m.fullName || 'Member',
+          avatarUrl: m.avatarUrl || null,
+          subtitle: m.designation || m.projectRole || 'Member',
+          role: m.projectRole || null,
+        });
+      });
+
+    return list;
+  }, [projectMembers, currentUserId]);
+
+  const mention = useMentionSuggestions({
+    candidates: mentionCandidates,
+    text: inputText,
+    setText: setInputText,
+    inputRef,
+  });
 
   // 2. Fetch messages & Subscribe to Realtime (changes + typing broadcasts)
   useEffect(() => {
@@ -257,6 +308,7 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (mention.isOpen) return;
     const text = inputText.trim();
     if (!text || !channelId) return;
 
@@ -991,13 +1043,27 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
           </button>
         </div>
 
-        <form onSubmit={handleSendMessage} className="space-y-2">
+        <form onSubmit={handleSendMessage} className="space-y-2 relative">
+          <MentionSuggestionsDropdown
+            isOpen={mention.isOpen}
+            query={mention.query}
+            selectedIndex={mention.selectedIndex}
+            setSelectedIndex={mention.setSelectedIndex}
+            filteredCandidates={mention.filteredCandidates}
+            onSelect={mention.selectCandidate}
+            onClose={mention.close}
+          />
           <input
             ref={inputRef}
             type="text"
-            placeholder="Write a message in #general..."
+            placeholder="Write a message in #general... (type @ to mention)"
             value={inputText}
             onChange={(e) => handleInputChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (mention.handleKeyDown(e)) {
+                return;
+              }
+            }}
             className="w-full text-xs px-3 py-2 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary"
           />
 
