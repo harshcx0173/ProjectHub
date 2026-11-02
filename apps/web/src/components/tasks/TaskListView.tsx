@@ -187,7 +187,14 @@ export function TaskListView({ tasks, statuses, onTaskClick }: TaskListViewProps
                     {task.taskKey}
                   </td>
                   <td className="py-2.5 px-3 font-medium text-gray-900 group-hover:text-primary transition-colors">
-                    <span className="line-clamp-1">{task.title}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="line-clamp-1">{task.title}</span>
+                      {task.hasNewComments && (
+                        <span className="shrink-0 px-1.5 py-0.2 rounded-full bg-primary text-white text-[9px] font-bold shadow-2xs">
+                          New comment
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="py-2.5 px-3">
                     <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-700">

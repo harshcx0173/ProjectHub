@@ -62,7 +62,9 @@ export async function GET(
           is_completed
         ),
         task_comments (
-          id
+          id,
+          created_at,
+          author_id
         )
       `)
       .eq('project_id', projectId)
@@ -82,7 +84,18 @@ export async function GET(
       const checklistItems = t.task_checklist_items || [];
       const checklistTotal = checklistItems.length;
       const checklistCompleted = checklistItems.filter((i: any) => i.is_completed).length;
-      const commentsCount = (t.task_comments || []).length;
+      const comments = t.task_comments || [];
+      const commentsCount = comments.length;
+      let latestCommentAt: string | null = null;
+      let latestCommentAuthorId: string | null = null;
+
+      if (comments.length > 0) {
+        const sorted = [...comments].sort(
+          (a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        latestCommentAt = sorted[0]?.created_at || null;
+        latestCommentAuthorId = sorted[0]?.author_id || null;
+      }
 
       return {
         id: t.id,
@@ -100,6 +113,8 @@ export async function GET(
         checklistTotal,
         checklistCompleted,
         commentsCount,
+        latestCommentAt,
+        latestCommentAuthorId,
         createdAt: t.created_at,
         updatedAt: t.updated_at,
       };

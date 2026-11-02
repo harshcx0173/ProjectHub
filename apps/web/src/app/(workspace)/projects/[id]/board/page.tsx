@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, use } from 'react';
+import React, { useState, useEffect, useMemo, useRef, use } from 'react';
 import { Kanban, List, Plus, Layers, AlertCircle, RefreshCw, UserCheck } from 'lucide-react';
 import { KanbanBoard } from '@/components/tasks/KanbanBoard';
 import { TaskListView } from '@/components/tasks/TaskListView';
@@ -9,6 +9,7 @@ import { CreateTaskModal } from '@/components/tasks/CreateTaskModal';
 import { TaskItem } from '@/components/tasks/TaskCard';
 import { TaskStatus } from '@/components/tasks/KanbanColumn';
 import { ProjectChatPanel } from '@/components/chat/ProjectChatPanel';
+import { createClient } from '@/lib/supabase/client';
 
 export default function ProjectBoardPage({
   params,
@@ -37,6 +38,16 @@ export default function ProjectBoardPage({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [defaultCreateStatusId, setDefaultCreateStatusId] = useState<string | undefined>();
 
+  const selectedTaskIdRef = useRef<string | null>(selectedTaskId);
+  useEffect(() => {
+    selectedTaskIdRef.current = selectedTaskId;
+  }, [selectedTaskId]);
+
+  const currentUserIdRef = useRef<string | undefined>(currentUserId);
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId;
+  }, [currentUserId]);
+
   // Fetch tasks, statuses and user permissions
   const fetchTasksAndStatuses = async () => {
     try {
@@ -47,7 +58,18 @@ export default function ProjectBoardPage({
       }
       const data = await res.json();
       setStatuses(data.statuses || []);
-      setTasks(data.tasks || []);
+      const formattedTasks: TaskItem[] = (data.tasks || []).map((t: any) => {
+        const lastRead = typeof window !== 'undefined' ? localStorage.getItem(`task_read_${t.id}`) : null;
+        const isNew = Boolean(
+          t.commentsCount &&
+          t.commentsCount > 0 &&
+          t.latestCommentAt &&
+          t.latestCommentAuthorId !== data.currentUserId &&
+          (!lastRead || new Date(t.latestCommentAt) > new Date(lastRead))
+        );
+        return { ...t, hasNewComments: isNew };
+      });
+      setTasks(formattedTasks);
       if (data.currentUserId) setCurrentUserId(data.currentUserId);
       if (data.userPermissions) setUserPermissions(data.userPermissions);
       setError(null);
@@ -61,6 +83,58 @@ export default function ProjectBoardPage({
   useEffect(() => {
     fetchTasksAndStatuses();
   }, [projectId]);
+
+  // Realtime subscription for comments on this project board
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`board_task_comments_${projectId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'task_comments',
+        },
+        (payload) => {
+          const newComment = payload.new as any;
+          if (!newComment?.task_id) return;
+
+          setTasks((prev) =>
+            prev.map((t) => {
+              if (t.id === newComment.task_id) {
+                const isCurrentlyOpen = selectedTaskIdRef.current === t.id;
+                const isFromSelf = Boolean(
+                  currentUserIdRef.current && newComment.author_id === currentUserIdRef.current
+                );
+                return {
+                  ...t,
+                  commentsCount: (t.commentsCount || 0) + 1,
+                  latestCommentAt: newComment.created_at,
+                  hasNewComments: !isCurrentlyOpen && !isFromSelf ? true : t.hasNewComments,
+                };
+              }
+              return t;
+            })
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [projectId]);
+
+  const handleTaskClick = (t: TaskItem) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`task_read_${t.id}`, new Date().toISOString());
+    }
+    setTasks((prev) =>
+      prev.map((item) => (item.id === t.id ? { ...item, hasNewComments: false } : item))
+    );
+    setSelectedTaskId(t.id);
+  };
 
   const handleOpenCreateTask = (statusId?: string) => {
     setDefaultCreateStatusId(statusId);
@@ -196,7 +270,7 @@ export default function ProjectBoardPage({
           <KanbanBoard
             statuses={statuses}
             tasks={displayedTasks}
-            onTaskClick={(t) => setSelectedTaskId(t.id)}
+            onTaskClick={handleTaskClick}
             onAddTaskClick={(sId) => handleOpenCreateTask(sId)}
             onTasksChange={handleTasksChange}
           />
@@ -204,7 +278,7 @@ export default function ProjectBoardPage({
           <TaskListView
             tasks={displayedTasks}
             statuses={statuses}
-            onTaskClick={(t) => setSelectedTaskId(t.id)}
+            onTaskClick={handleTaskClick}
           />
         )}
       </div>

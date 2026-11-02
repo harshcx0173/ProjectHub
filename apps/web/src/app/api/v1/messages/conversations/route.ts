@@ -43,6 +43,7 @@ export async function GET(_request: NextRequest) {
         updated_at,
         conversation_members (
           user_id,
+          last_read_at,
           profiles (
             id,
             full_name,
@@ -82,6 +83,23 @@ export async function GET(_request: NextRequest) {
         const allMembers = (c.conversation_members || []).map((m: any) => m.profiles).filter(Boolean);
         const otherMembers = allMembers.filter((m: any) => m.id !== user.id);
 
+        const myMembership = (c.conversation_members || []).find((m: any) => m.user_id === user.id);
+        const lastReadAt = myMembership?.last_read_at ? new Date(myMembership.last_read_at).toISOString() : null;
+
+        let unreadCount = 0;
+        if (latestMsg && latestMsg.sender_id !== user.id) {
+          if (!lastReadAt || new Date(latestMsg.created_at) > new Date(lastReadAt)) {
+            const { count } = await supabase
+              .from('conversation_messages')
+              .select('id', { count: 'exact', head: true })
+              .eq('conversation_id', c.id)
+              .eq('is_deleted', false)
+              .neq('sender_id', user.id)
+              .gt('created_at', lastReadAt || '1970-01-01T00:00:00Z');
+            unreadCount = count || 1;
+          }
+        }
+
         let displayName = c.name;
         let displayAvatar = null;
         let displaySubtitle = '';
@@ -105,6 +123,7 @@ export async function GET(_request: NextRequest) {
           subtitle: displaySubtitle,
           membersCount: allMembers.length,
           members: allMembers,
+          unreadCount,
           latestMessage: latestMsg
             ? {
                 id: latestMsg.id,

@@ -82,6 +82,10 @@ export function TaskDrawer({
       return;
     }
 
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`task_read_${taskId}`, new Date().toISOString());
+    }
+
     let isMounted = true;
     setLoading(true);
     setConflictError(null);

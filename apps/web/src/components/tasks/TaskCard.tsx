@@ -26,6 +26,9 @@ export interface TaskItem {
   checklistTotal?: number;
   checklistCompleted?: number;
   commentsCount?: number;
+  latestCommentAt?: string | null;
+  latestCommentAuthorId?: string | null;
+  hasNewComments?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -75,7 +78,9 @@ export function TaskCard({ task, onClick, isOverlay }: TaskCardProps) {
     <div
       ref={setNodeRef}
       style={style}
-      className={`group relative rounded-xl border border-border bg-white p-3.5 shadow-subtle hover:shadow-card hover:border-gray-300 transition-all cursor-pointer ${
+      className={`group relative rounded-xl border bg-white p-3.5 shadow-subtle hover:shadow-card hover:border-gray-300 transition-all cursor-pointer ${
+        task.hasNewComments ? 'border-primary/40 ring-1 ring-primary/20 bg-blue-50/20' : 'border-border'
+      } ${
         isOverlay ? 'shadow-lg border-primary rotate-1 scale-105' : ''
       }`}
       onClick={onClick}
@@ -107,12 +112,19 @@ export function TaskCard({ task, onClick, isOverlay }: TaskCardProps) {
           </span>
         </div>
 
-        <span
-          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${priorityMeta.bg} ${priorityMeta.text}`}
-        >
-          {task.priority === 'urgent' && <AlertCircle className="h-3 w-3" />}
-          {priorityMeta.label}
-        </span>
+        <div className="flex items-center gap-1.5">
+          {task.hasNewComments && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary text-white shadow-2xs">
+              New comment
+            </span>
+          )}
+          <span
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${priorityMeta.bg} ${priorityMeta.text}`}
+          >
+            {task.priority === 'urgent' && <AlertCircle className="h-3 w-3" />}
+            {priorityMeta.label}
+          </span>
+        </div>
       </div>
 
       {/* Task Title */}
@@ -146,9 +158,20 @@ export function TaskCard({ task, onClick, isOverlay }: TaskCardProps) {
 
           {/* Comments Count */}
           {Boolean(task.commentsCount && task.commentsCount > 0) && (
-            <span className="flex items-center gap-1 text-gray-500 font-medium">
-              <MessageSquare className="h-3 w-3" />
-              {task.commentsCount}
+            <span
+              className={`flex items-center gap-1 font-medium transition-colors ${
+                task.hasNewComments
+                  ? 'text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-md font-bold text-[11px] shadow-2xs'
+                  : 'text-gray-500'
+              }`}
+              title={
+                task.hasNewComments
+                  ? `${task.commentsCount} comments (New comments!)`
+                  : `${task.commentsCount} comments`
+              }
+            >
+              <MessageSquare className={`h-3 w-3 ${task.hasNewComments ? 'fill-primary/30 text-primary' : ''}`} />
+              <span>{task.commentsCount}</span>
             </span>
           )}
         </div>

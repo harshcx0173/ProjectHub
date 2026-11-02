@@ -24,6 +24,7 @@ interface Conversation {
   subtitle: string;
   membersCount: number;
   members: any[];
+  unreadCount?: number;
   latestMessage: {
     id: string;
     content: string;
@@ -254,6 +255,14 @@ export default function MessagesPage() {
               createdAt: newMsg.created_at,
             };
             targetConv.updatedAt = newMsg.created_at;
+
+            const isCurrentlySelected = activeId === newMsg.conversation_id;
+            const isFromSelf = Boolean(uid && newMsg.sender_id === uid);
+            if (!isCurrentlySelected && !isFromSelf) {
+              targetConv.unreadCount = (targetConv.unreadCount || 0) + 1;
+            } else if (isCurrentlySelected) {
+              targetConv.unreadCount = 0;
+            }
 
             const remaining = prev.filter((_, idx) => idx !== convIndex);
             return [targetConv, ...remaining];
@@ -545,42 +554,90 @@ export default function MessagesPage() {
           ) : (
             filteredConversations.map((c) => {
               const isSelected = c.id === selectedConvId;
+              const hasUnread = Boolean(c.unreadCount && c.unreadCount > 0 && !isSelected);
+
               return (
                 <button
                   key={c.id}
-                  onClick={() => setSelectedConvId(c.id)}
-                  className={`w-full p-3 text-left flex items-start gap-3 transition-colors ${
-                    isSelected ? 'bg-primary/5 border-l-2 border-primary' : 'hover:bg-gray-50'
+                  onClick={() => {
+                    setSelectedConvId(c.id);
+                    // Mark as read locally immediately
+                    setConversations((prev) =>
+                      prev.map((item) => (item.id === c.id ? { ...item, unreadCount: 0 } : item))
+                    );
+                  }}
+                  className={`w-full p-3 text-left flex items-start gap-3 transition-colors relative ${
+                    isSelected
+                      ? 'bg-primary/10 border-l-3 border-primary'
+                      : hasUnread
+                      ? 'bg-blue-50/70 hover:bg-blue-50 border-l-3 border-primary'
+                      : 'hover:bg-gray-50'
                   }`}
                 >
                   {/* Avatar / Icon */}
                   <div className="relative shrink-0">
                     {c.type === 'group' ? (
-                      <div className="h-9 w-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-xs border border-purple-200">
+                      <div
+                        className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-xs border ${
+                          hasUnread
+                            ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
+                            : 'bg-purple-100 text-purple-700 border-purple-200'
+                        }`}
+                      >
                         <Users className="h-4 w-4" />
                       </div>
                     ) : (
-                      <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold text-xs border border-primary/20">
+                      <div
+                        className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-xs border ${
+                          hasUnread
+                            ? 'bg-primary text-white border-primary shadow-xs'
+                            : 'bg-primary/10 text-primary border-primary/20'
+                        }`}
+                      >
                         {c.name?.[0]?.toUpperCase() || 'U'}
                       </div>
+                    )}
+                    {hasUnread && (
+                      <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-primary ring-2 ring-white" />
                     )}
                   </div>
 
                   {/* Content snippet */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-1 mb-0.5">
-                      <p className="text-xs font-semibold text-gray-900 truncate">{c.name}</p>
+                      <p
+                        className={`text-xs truncate ${
+                          hasUnread ? 'font-bold text-gray-950' : 'font-semibold text-gray-900'
+                        }`}
+                      >
+                        {c.name}
+                      </p>
                       {c.latestMessage && (
-                        <span className="text-[10px] text-gray-400 shrink-0">
+                        <span
+                          className={`text-[10px] shrink-0 ${
+                            hasUnread ? 'text-primary font-bold' : 'text-gray-400'
+                          }`}
+                        >
                           {format(new Date(c.latestMessage.createdAt), 'h:mm a')}
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-gray-500 truncate">
-                      {c.latestMessage
-                        ? `${c.latestMessage.senderName}: ${c.latestMessage.content}`
-                        : c.subtitle}
-                    </p>
+                    <div className="flex items-center justify-between gap-1.5">
+                      <p
+                        className={`text-[11px] truncate ${
+                          hasUnread ? 'font-semibold text-gray-900' : 'text-gray-500'
+                        }`}
+                      >
+                        {c.latestMessage
+                          ? `${c.latestMessage.senderName}: ${c.latestMessage.content}`
+                          : c.subtitle}
+                      </p>
+                      {hasUnread && (
+                        <span className="shrink-0 px-1.5 py-0.2 rounded-full bg-primary text-white text-[10px] font-bold shadow-xs">
+                          {c.unreadCount}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </button>
               );

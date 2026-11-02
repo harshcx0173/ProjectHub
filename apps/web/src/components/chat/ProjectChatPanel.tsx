@@ -55,6 +55,7 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
   const [recording, setRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [activeReactionMsgId, setActiveReactionMsgId] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -77,6 +78,23 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const activeChannelRef = useRef<any>(null);
+
+  const collapsedRef = useRef(collapsed);
+  const currentUserIdRef = useRef<string | null>(currentUserId);
+
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId;
+  }, [currentUserId]);
+
+  useEffect(() => {
+    collapsedRef.current = collapsed;
+    if (!collapsed && channelId) {
+      setUnreadCount(0);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`project_chat_read_${channelId}`, new Date().toISOString());
+      }
+    }
+  }, [collapsed, channelId]);
 
   const supabase = useMemo(() => createClient(), []);
   const currentUserNameRef = useRef(currentUserName);
@@ -125,6 +143,18 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
               );
               return [...data.messages, ...pending];
             });
+
+            // If panel is currently collapsed, calculate unread messages since last read
+            if (collapsedRef.current && typeof window !== 'undefined') {
+              const lastRead = localStorage.getItem(`project_chat_read_${channelId}`);
+              const unreads = data.messages.filter(
+                (m: any) =>
+                  m.userId !== currentUserIdRef.current &&
+                  (!lastRead || new Date(m.createdAt) > new Date(lastRead))
+              );
+              setUnreadCount(unreads.length);
+            }
+
             scrollToBottom();
           }
         })
@@ -147,7 +177,13 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
           table: 'messages',
           filter: `channel_id=eq.${channelId}`,
         },
-        () => {
+        (payload) => {
+          const newMsg = payload.new as any;
+          if (newMsg && newMsg.user_id !== currentUserIdRef.current) {
+            if (collapsedRef.current) {
+              setUnreadCount((prev) => prev + 1);
+            }
+          }
           loadMessages();
         }
       )
@@ -490,20 +526,56 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
   });
 
   if (collapsed) {
+    const hasUnread = unreadCount > 0;
     return (
-      <div className="hidden lg:flex flex-col items-center py-4 bg-white border border-border rounded-xl shadow-subtle shrink-0 w-12 justify-between">
+      <div
+        className={`hidden lg:flex flex-col items-center py-4 rounded-xl shadow-subtle shrink-0 w-12 justify-between transition-colors border ${
+          hasUnread
+            ? 'bg-blue-50/70 border-primary ring-1 ring-primary/25'
+            : 'bg-white border-border'
+        }`}
+      >
         <button
           type="button"
-          onClick={() => setCollapsed(false)}
-          className="p-2 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
-          title="Open Project Chat"
+          onClick={() => {
+            setCollapsed(false);
+            setUnreadCount(0);
+          }}
+          className={`p-2 rounded-lg transition-colors relative ${
+            hasUnread
+              ? 'bg-primary text-white hover:bg-primary/90 shadow-xs'
+              : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+          }`}
+          title={
+            hasUnread
+              ? `Open Project Chat (${unreadCount} new message${unreadCount > 1 ? 's' : ''})`
+              : 'Open Project Chat'
+          }
           aria-label="Open Project Chat"
         >
           <ChevronLeft className="h-4 w-4" />
+          {hasUnread && (
+            <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+          )}
         </button>
-        <div className="[writing-mode:vertical-rl] rotate-180 text-xs font-semibold text-gray-500 flex items-center gap-2">
-          <MessageSquare className="h-3.5 w-3.5 text-primary" />
-          <span>Project Chat</span>
+
+        <div className="[writing-mode:vertical-rl] rotate-180 text-xs font-semibold flex items-center gap-2">
+          <div className="relative">
+            <MessageSquare
+              className={`h-4 w-4 ${hasUnread ? 'text-primary fill-primary/30' : 'text-primary'}`}
+            />
+            {hasUnread && (
+              <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-primary animate-ping" />
+            )}
+          </div>
+          <span className={hasUnread ? 'text-primary font-bold' : 'text-gray-500'}>
+            Project Chat
+          </span>
+          {hasUnread && (
+            <span className="px-1.5 py-0.2 rounded-full bg-primary text-white text-[10px] font-bold shadow-xs [writing-mode:horizontal-tb]">
+              {unreadCount}
+            </span>
+          )}
         </div>
         <div />
       </div>
