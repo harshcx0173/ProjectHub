@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { createClient } from '@/lib/supabase/client';
+import { renderMessageWithMentions, isUserMentioned } from '@/lib/mentions';
 
 interface Conversation {
   id: string;
@@ -25,6 +26,7 @@ interface Conversation {
   membersCount: number;
   members: any[];
   unreadCount?: number;
+  hasUnreadMention?: boolean;
   latestMessage: {
     id: string;
     content: string;
@@ -65,6 +67,7 @@ export default function MessagesPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'direct' | 'group'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string; fullName: string; email?: string } | null>(null);
 
   // New Chat Modal state
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
@@ -82,6 +85,7 @@ export default function MessagesPage() {
   const selectedConvIdRef = useRef<string | null>(selectedConvId);
   const conversationsRef = useRef<Conversation[]>(conversations);
   const currentUserIdRef = useRef<string | null>(currentUserId);
+  const currentUserRef = useRef<{ id: string; fullName: string; email?: string } | null>(null);
 
   useEffect(() => {
     selectedConvIdRef.current = selectedConvId;
@@ -95,6 +99,10 @@ export default function MessagesPage() {
     currentUserIdRef.current = currentUserId;
   }, [currentUserId]);
 
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
   const supabase = useMemo(() => createClient(), []);
 
   // Fetch current user
@@ -102,6 +110,18 @@ export default function MessagesPage() {
     supabase.auth.getUser().then(({ data }) => {
       if (data?.user) {
         setCurrentUserId(data.user.id);
+        supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', data.user.id)
+          .maybeSingle()
+          .then(({ data: profile }) => {
+            setCurrentUser({
+              id: data.user.id,
+              fullName: profile?.full_name || '',
+              email: data.user.email || '',
+            });
+          });
       }
     });
   }, [supabase]);
@@ -258,10 +278,18 @@ export default function MessagesPage() {
 
             const isCurrentlySelected = activeId === newMsg.conversation_id;
             const isFromSelf = Boolean(uid && newMsg.sender_id === uid);
+            const isMentioned = currentUserRef.current
+              ? isUserMentioned(newMsg.content, currentUserRef.current)
+              : false;
+
             if (!isCurrentlySelected && !isFromSelf) {
               targetConv.unreadCount = (targetConv.unreadCount || 0) + 1;
+              if (isMentioned) {
+                targetConv.hasUnreadMention = true;
+              }
             } else if (isCurrentlySelected) {
               targetConv.unreadCount = 0;
+              targetConv.hasUnreadMention = false;
             }
 
             const remaining = prev.filter((_, idx) => idx !== convIndex);
@@ -563,7 +591,7 @@ export default function MessagesPage() {
                     setSelectedConvId(c.id);
                     // Mark as read locally immediately
                     setConversations((prev) =>
-                      prev.map((item) => (item.id === c.id ? { ...item, unreadCount: 0 } : item))
+                      prev.map((item) => (item.id === c.id ? { ...item, unreadCount: 0, hasUnreadMention: false } : item))
                     );
                   }}
                   className={`w-full p-3 text-left flex items-start gap-3 transition-colors relative ${
@@ -633,9 +661,19 @@ export default function MessagesPage() {
                           : c.subtitle}
                       </p>
                       {hasUnread && (
-                        <span className="shrink-0 px-1.5 py-0.2 rounded-full bg-primary text-white text-[10px] font-bold shadow-xs">
-                          {c.unreadCount}
-                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {c.hasUnreadMention && (
+                            <span
+                              className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px] font-extrabold shadow-xs animate-pulse"
+                              title="You were mentioned in an unread message"
+                            >
+                              @
+                            </span>
+                          )}
+                          <span className="px-1.5 py-0.2 rounded-full bg-primary text-white text-[10px] font-bold shadow-xs">
+                            {c.unreadCount}
+                          </span>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -723,7 +761,9 @@ export default function MessagesPage() {
                               : 'bg-white border border-border text-gray-900 rounded-bl-xs'
                           }`}
                         >
-                          <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                          <div className="whitespace-pre-wrap break-words">
+                            {renderMessageWithMentions(m.content, currentUser?.fullName)}
+                          </div>
                         </div>
 
                         <span className="text-[10px] text-gray-400 mt-1 px-1">

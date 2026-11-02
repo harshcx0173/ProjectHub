@@ -189,6 +189,14 @@ export function TaskListView({ tasks, statuses, onTaskClick }: TaskListViewProps
                   <td className="py-2.5 px-3 font-medium text-gray-900 group-hover:text-primary transition-colors">
                     <div className="flex items-center gap-2">
                       <span className="line-clamp-1">{task.title}</span>
+                      {task.hasNewComments && task.hasUnreadMention && (
+                        <span
+                          className="shrink-0 px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[9px] font-extrabold shadow-2xs animate-pulse"
+                          title="You were mentioned in a task comment"
+                        >
+                          @
+                        </span>
+                      )}
                       {task.hasNewComments && (
                         <span className="shrink-0 px-1.5 py-0.2 rounded-full bg-primary text-white text-[9px] font-bold shadow-2xs">
                           New comment

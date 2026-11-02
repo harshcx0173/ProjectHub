@@ -10,6 +10,7 @@ import { TaskItem } from '@/components/tasks/TaskCard';
 import { TaskStatus } from '@/components/tasks/KanbanColumn';
 import { ProjectChatPanel } from '@/components/chat/ProjectChatPanel';
 import { createClient } from '@/lib/supabase/client';
+import { isUserMentioned } from '@/lib/mentions';
 
 export default function ProjectBoardPage({
   params,
@@ -22,6 +23,7 @@ export default function ProjectBoardPage({
   const [statuses, setStatuses] = useState<TaskStatus[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | undefined>();
+  const [currentUser, setCurrentUser] = useState<{ id: string; fullName: string; email?: string } | null>(null);
   const [userPermissions, setUserPermissions] = useState<{
     canAssign?: boolean;
     canSelfAssign?: boolean;
@@ -48,6 +50,32 @@ export default function ProjectBoardPage({
     currentUserIdRef.current = currentUserId;
   }, [currentUserId]);
 
+  const currentUserRef = useRef<{ id: string; fullName: string; email?: string } | null>(null);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
+  // Fetch current user details
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user) {
+        supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', data.user.id)
+          .maybeSingle()
+          .then(({ data: profile }) => {
+            setCurrentUser({
+              id: data.user.id,
+              fullName: profile?.full_name || '',
+              email: data.user.email || '',
+            });
+          });
+      }
+    });
+  }, []);
+
   // Fetch tasks, statuses and user permissions
   const fetchTasksAndStatuses = async () => {
     try {
@@ -67,7 +95,11 @@ export default function ProjectBoardPage({
           t.latestCommentAuthorId !== data.currentUserId &&
           (!lastRead || new Date(t.latestCommentAt) > new Date(lastRead))
         );
-        return { ...t, hasNewComments: isNew };
+        return {
+          ...t,
+          hasNewComments: isNew,
+          hasUnreadMention: isNew && t.hasUnreadMention,
+        };
       });
       setTasks(formattedTasks);
       if (data.currentUserId) setCurrentUserId(data.currentUserId);
@@ -107,11 +139,15 @@ export default function ProjectBoardPage({
                 const isFromSelf = Boolean(
                   currentUserIdRef.current && newComment.author_id === currentUserIdRef.current
                 );
+                const isMentioned = currentUserRef.current
+                  ? isUserMentioned(newComment.content, currentUserRef.current)
+                  : false;
                 return {
                   ...t,
                   commentsCount: (t.commentsCount || 0) + 1,
                   latestCommentAt: newComment.created_at,
                   hasNewComments: !isCurrentlyOpen && !isFromSelf ? true : t.hasNewComments,
+                  hasUnreadMention: !isCurrentlyOpen && !isFromSelf && isMentioned ? true : t.hasUnreadMention,
                 };
               }
               return t;
@@ -131,7 +167,9 @@ export default function ProjectBoardPage({
       localStorage.setItem(`task_read_${t.id}`, new Date().toISOString());
     }
     setTasks((prev) =>
-      prev.map((item) => (item.id === t.id ? { ...item, hasNewComments: false } : item))
+      prev.map((item) =>
+        item.id === t.id ? { ...item, hasNewComments: false, hasUnreadMention: false } : item
+      )
     );
     setSelectedTaskId(t.id);
   };
@@ -293,6 +331,7 @@ export default function ProjectBoardPage({
         onTaskUpdated={fetchTasksAndStatuses}
         statuses={statuses}
         currentUserId={currentUserId}
+        currentUserName={currentUser?.fullName}
         userPermissions={userPermissions}
       />
 

@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createTaskSchema } from '@project-hub/shared';
 import { checkUserPermission } from '@/lib/permissions';
 import { recordAuditLog } from '@/lib/audit';
+import { isUserMentioned } from '@/lib/mentions';
 
 export async function GET(
   _request: NextRequest,
@@ -20,6 +21,13 @@ export async function GET(
     if (authError || !user) {
       return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
     }
+
+    const { data: userProfile } = await supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('id', user.id)
+      .maybeSingle();
+    const currentUserName = userProfile?.full_name || '';
 
     // 1. Fetch statuses for this project
     const { data: statuses, error: statusError } = await supabase
@@ -64,7 +72,8 @@ export async function GET(
         task_comments (
           id,
           created_at,
-          author_id
+          author_id,
+          content
         )
       `)
       .eq('project_id', projectId)
@@ -97,6 +106,14 @@ export async function GET(
         latestCommentAuthorId = sorted[0]?.author_id || null;
       }
 
+      let hasUnreadMention = false;
+      if (comments.length > 0) {
+        const otherComments = comments.filter((c: any) => c.author_id !== user.id);
+        hasUnreadMention = otherComments.some((c: any) =>
+          isUserMentioned(c.content, { id: user.id, fullName: currentUserName, email: user.email })
+        );
+      }
+
       return {
         id: t.id,
         statusId: t.status_id,
@@ -115,6 +132,7 @@ export async function GET(
         commentsCount,
         latestCommentAt,
         latestCommentAuthorId,
+        hasUnreadMention,
         createdAt: t.created_at,
         updatedAt: t.updated_at,
       };

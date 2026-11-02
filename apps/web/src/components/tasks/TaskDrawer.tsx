@@ -19,6 +19,7 @@ import {
 import { format } from 'date-fns';
 import { TaskStatus } from './KanbanColumn';
 import { createClient } from '@/lib/supabase/client';
+import { renderMessageWithMentions } from '@/lib/mentions';
 
 function formatSafeDate(dateVal: any, pattern: string = 'MMM d, h:mm a'): string {
   if (!dateVal) return '';
@@ -33,6 +34,7 @@ interface TaskDrawerProps {
   onTaskUpdated: () => void;
   statuses: TaskStatus[];
   currentUserId?: string;
+  currentUserName?: string;
   userPermissions?: {
     canAssign?: boolean;
     canSelfAssign?: boolean;
@@ -47,6 +49,7 @@ export function TaskDrawer({
   onTaskUpdated,
   statuses,
   currentUserId,
+  currentUserName,
   userPermissions = { canAssign: true, canSelfAssign: true, canEdit: true, canDelete: true },
 }: TaskDrawerProps) {
   const [task, setTask] = useState<any>(null);
@@ -894,7 +897,9 @@ export function TaskDrawer({
                           {formatSafeDate(c.createdAt || c.created_at)}
                         </span>
                       </div>
-                      <p className="text-xs text-gray-700 whitespace-pre-wrap">{c.content}</p>
+                      <div className="text-xs text-gray-700 whitespace-pre-wrap">
+                        {renderMessageWithMentions(c.content, currentUserName)}
+                      </div>
                     </div>
                   ))}
 

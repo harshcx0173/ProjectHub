@@ -29,6 +29,7 @@ export interface TaskItem {
   latestCommentAt?: string | null;
   latestCommentAuthorId?: string | null;
   hasNewComments?: boolean;
+  hasUnreadMention?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -158,21 +159,31 @@ export function TaskCard({ task, onClick, isOverlay }: TaskCardProps) {
 
           {/* Comments Count */}
           {Boolean(task.commentsCount && task.commentsCount > 0) && (
-            <span
-              className={`flex items-center gap-1 font-medium transition-colors ${
-                task.hasNewComments
-                  ? 'text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-md font-bold text-[11px] shadow-2xs'
-                  : 'text-gray-500'
-              }`}
-              title={
-                task.hasNewComments
-                  ? `${task.commentsCount} comments (New comments!)`
-                  : `${task.commentsCount} comments`
-              }
-            >
-              <MessageSquare className={`h-3 w-3 ${task.hasNewComments ? 'fill-primary/30 text-primary' : ''}`} />
-              <span>{task.commentsCount}</span>
-            </span>
+            <div className="flex items-center gap-1">
+              {task.hasNewComments && task.hasUnreadMention && (
+                <span
+                  className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[9px] font-extrabold shadow-xs animate-pulse"
+                  title="You were mentioned in an unread comment"
+                >
+                  @
+                </span>
+              )}
+              <span
+                className={`flex items-center gap-1 font-medium transition-colors ${
+                  task.hasNewComments
+                    ? 'text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-md font-bold text-[11px] shadow-2xs'
+                    : 'text-gray-500'
+                }`}
+                title={
+                  task.hasNewComments
+                    ? `${task.commentsCount} comments (New comments!)`
+                    : `${task.commentsCount} comments`
+                }
+              >
+                <MessageSquare className={`h-3 w-3 ${task.hasNewComments ? 'fill-primary/30 text-primary' : ''}`} />
+                <span>{task.commentsCount}</span>
+              </span>
+            </div>
           )}
         </div>
 

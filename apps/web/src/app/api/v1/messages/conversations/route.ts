@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { isUserMentioned } from '@/lib/mentions';
 
 export async function GET(_request: NextRequest) {
   try {
@@ -12,6 +13,14 @@ export async function GET(_request: NextRequest) {
     if (authError || !user) {
       return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
     }
+
+    // 0. Fetch current user profile for mention detection
+    const { data: userProfile } = await supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('id', user.id)
+      .maybeSingle();
+    const currentUserName = userProfile?.full_name || '';
 
     // 1. Fetch conversations the user is a member of
     const { data: memberRows, error: memberErr } = await supabase
@@ -87,16 +96,22 @@ export async function GET(_request: NextRequest) {
         const lastReadAt = myMembership?.last_read_at ? new Date(myMembership.last_read_at).toISOString() : null;
 
         let unreadCount = 0;
+        let hasUnreadMention = false;
         if (latestMsg && latestMsg.sender_id !== user.id) {
           if (!lastReadAt || new Date(latestMsg.created_at) > new Date(lastReadAt)) {
-            const { count } = await supabase
+            const { data: unreadRows, count } = await supabase
               .from('conversation_messages')
-              .select('id', { count: 'exact', head: true })
+              .select('id, content', { count: 'exact' })
               .eq('conversation_id', c.id)
               .eq('is_deleted', false)
               .neq('sender_id', user.id)
               .gt('created_at', lastReadAt || '1970-01-01T00:00:00Z');
-            unreadCount = count || 1;
+            unreadCount = count || (unreadRows ? unreadRows.length : 1);
+            if (unreadRows && unreadRows.length > 0) {
+              hasUnreadMention = unreadRows.some((m: any) =>
+                isUserMentioned(m.content, { id: user.id, fullName: currentUserName, email: user.email })
+              );
+            }
           }
         }
 
@@ -124,6 +139,7 @@ export async function GET(_request: NextRequest) {
           membersCount: allMembers.length,
           members: allMembers,
           unreadCount,
+          hasUnreadMention,
           latestMessage: latestMsg
             ? {
                 id: latestMsg.id,

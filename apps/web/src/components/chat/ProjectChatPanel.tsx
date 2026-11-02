@@ -31,6 +31,7 @@ import {
 import DOMPurify from 'dompurify';
 import { format } from 'date-fns';
 import { createClient } from '@/lib/supabase/client';
+import { isUserMentioned, highlightMentionsHtml } from '@/lib/mentions';
 
 interface ProjectChatPanelProps {
   projectId: string;
@@ -56,6 +57,7 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
   const [uploading, setUploading] = useState(false);
   const [activeReactionMsgId, setActiveReactionMsgId] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [hasUnreadMention, setHasUnreadMention] = useState(false);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -90,6 +92,7 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
     collapsedRef.current = collapsed;
     if (!collapsed && channelId) {
       setUnreadCount(0);
+      setHasUnreadMention(false);
       if (typeof window !== 'undefined') {
         localStorage.setItem(`project_chat_read_${channelId}`, new Date().toISOString());
       }
@@ -153,6 +156,13 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
                   (!lastRead || new Date(m.createdAt) > new Date(lastRead))
               );
               setUnreadCount(unreads.length);
+              const hasMention = unreads.some((m: any) =>
+                isUserMentioned(m.content, {
+                  id: currentUserIdRef.current,
+                  fullName: currentUserNameRef.current,
+                })
+              );
+              setHasUnreadMention(hasMention);
             }
 
             scrollToBottom();
@@ -182,6 +192,14 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
           if (newMsg && newMsg.user_id !== currentUserIdRef.current) {
             if (collapsedRef.current) {
               setUnreadCount((prev) => prev + 1);
+              if (
+                isUserMentioned(newMsg.content, {
+                  id: currentUserIdRef.current,
+                  fullName: currentUserNameRef.current,
+                })
+              ) {
+                setHasUnreadMention(true);
+              }
             }
           }
           loadMessages();
@@ -531,7 +549,9 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
       <div
         className={`hidden lg:flex flex-col items-center py-4 rounded-xl shadow-subtle shrink-0 w-12 justify-between transition-colors border ${
           hasUnread
-            ? 'bg-blue-50/70 border-primary ring-1 ring-primary/25'
+            ? hasUnreadMention
+              ? 'bg-amber-50/70 border-amber-400 ring-1 ring-amber-400/25'
+              : 'bg-blue-50/70 border-primary ring-1 ring-primary/25'
             : 'bg-white border-border'
         }`}
       >
@@ -540,42 +560,77 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
           onClick={() => {
             setCollapsed(false);
             setUnreadCount(0);
+            setHasUnreadMention(false);
           }}
           className={`p-2 rounded-lg transition-colors relative ${
             hasUnread
-              ? 'bg-primary text-white hover:bg-primary/90 shadow-xs'
+              ? hasUnreadMention
+                ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-xs'
+                : 'bg-primary text-white hover:bg-primary/90 shadow-xs'
               : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
           }`}
           title={
             hasUnread
-              ? `Open Project Chat (${unreadCount} new message${unreadCount > 1 ? 's' : ''})`
+              ? `Open Project Chat (${unreadCount} new message${unreadCount > 1 ? 's' : ''}${hasUnreadMention ? ' - @mentioned!' : ''})`
               : 'Open Project Chat'
           }
           aria-label="Open Project Chat"
         >
           <ChevronLeft className="h-4 w-4" />
           {hasUnread && (
-            <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+            <span
+              className={`absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
+                hasUnreadMention ? 'bg-amber-500' : 'bg-red-500'
+              }`}
+            />
           )}
         </button>
 
         <div className="[writing-mode:vertical-rl] rotate-180 text-xs font-semibold flex items-center gap-2">
           <div className="relative">
             <MessageSquare
-              className={`h-4 w-4 ${hasUnread ? 'text-primary fill-primary/30' : 'text-primary'}`}
+              className={`h-4 w-4 ${
+                hasUnread
+                  ? hasUnreadMention
+                    ? 'text-amber-600 fill-amber-500/30'
+                    : 'text-primary fill-primary/30'
+                  : 'text-primary'
+              }`}
             />
             {hasUnread && (
-              <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-primary animate-ping" />
+              <span
+                className={`absolute -top-1 -right-1 h-2 w-2 rounded-full animate-ping ${
+                  hasUnreadMention ? 'bg-amber-500' : 'bg-primary'
+                }`}
+              />
             )}
           </div>
-          <span className={hasUnread ? 'text-primary font-bold' : 'text-gray-500'}>
+          <span
+            className={
+              hasUnread
+                ? hasUnreadMention
+                  ? 'text-amber-700 font-bold'
+                  : 'text-primary font-bold'
+                : 'text-gray-500'
+            }
+          >
             Project Chat
           </span>
-          {hasUnread && (
-            <span className="px-1.5 py-0.2 rounded-full bg-primary text-white text-[10px] font-bold shadow-xs [writing-mode:horizontal-tb]">
-              {unreadCount}
-            </span>
-          )}
+          <div className="flex items-center gap-1 [writing-mode:horizontal-tb]">
+            {hasUnread && hasUnreadMention && (
+              <span
+                className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px] font-extrabold shadow-xs animate-pulse"
+                title="You were mentioned in project chat"
+              >
+                @
+              </span>
+            )}
+            {hasUnread && (
+              <span className="px-1.5 py-0.2 rounded-full bg-primary text-white text-[10px] font-bold shadow-xs">
+                {unreadCount}
+              </span>
+            )}
+          </div>
         </div>
         <div />
       </div>
@@ -660,7 +715,7 @@ export function ProjectChatPanel({ projectId }: ProjectChatPanelProps) {
       <div className="flex-1 p-3 space-y-3.5 overflow-y-auto bg-gray-50/40">
         {displayedMessages.map((m) => {
           const isOwner = currentUserId === m.userId;
-          const sanitizedContent = DOMPurify.sanitize(m.content);
+          const sanitizedContent = DOMPurify.sanitize(highlightMentionsHtml(m.content, currentUserName));
           const parentMsg = m.parentId ? messages.find((p) => p.id === m.parentId) : null;
 
           return (
